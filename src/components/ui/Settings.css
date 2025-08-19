@@ -1,0 +1,71 @@
+.settings-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.settings-modal-body h3 {
+  margin-top: 0;
+  margin-bottom: 0rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.settings-field label {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.settings-field input[type="text"],
+.settings-field select,
+.settings-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background-color: var(--bg-card);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.settings-field textarea.system-prompt-textarea {
+  font-family: var(--font-family-mono);
+  resize: vertical;
+  min-height: 80px;
+}
+
+.settings-field .model-select-group {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+.settings-field .model-select-group select {
+  flex-grow: 1;
+}
+
+.settings-field .model-select-group .btn {
+  flex-shrink: 0;
+}
+
+.control-toggle-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: var(--spacing-2);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+}

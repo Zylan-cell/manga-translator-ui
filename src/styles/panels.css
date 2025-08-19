@@ -1,0 +1,31 @@
+/* src/styles/panels.css */
+.workspace-panel {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.workspace-panel-header {
+  flex-shrink: 0;
+  padding: var(--spacing-3);
+  background-color: var(--color-gray-50);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.workspace-panel-header h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.workspace-panel-content {
+  flex: 1 1 0;
+  overflow: auto;
+  position: relative;
+}

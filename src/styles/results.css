@@ -1,0 +1,111 @@
+/* src/styles/results.css */
+.results-panel-content {
+  padding: var(--spacing-2);
+}
+
+.results-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.result-item {
+  background-color: var(--color-white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-2) var(--spacing-3);
+  transition: all 0.2s ease;
+  border-left: 4px solid transparent;
+}
+
+.result-item:not(.editable-item):hover {
+  border-color: var(--color-primary-light);
+  background-color: var(--bg-hover);
+}
+
+.result-item.editable-item {
+  cursor: pointer;
+}
+
+.result-item.editable-item:hover {
+  background-color: var(--bg-hover);
+  border-left-color: var(--color-gray-300);
+}
+
+.result-item.selected {
+  border-left-color: var(--color-primary);
+  background-color: var(--bg-selected);
+  border-color: var(--color-primary);
+}
+
+.result-item.swap-source {
+  border-color: var(--color-warning);
+  border-left-width: 4px;
+  border-left-color: var(--color-danger);
+  background-color: #fffbeb;
+}
+
+.result-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+}
+
+.result-item-id {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: var(--bg-selected);
+  padding: 2px 6px;
+  border-radius: 0.25rem;
+  min-width: 24px;
+  text-align: center;
+}
+
+.result-item-title {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.badge {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.badge-primary {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-success {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.badge-secondary {
+  background-color: #e5e7eb;
+  color: #4b5563;
+}
+
+.result-item-content {
+  margin-top: var(--spacing-2);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-color);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.empty-state-card {
+  padding: var(--spacing-4);
+  text-align: center;
+  color: var(--text-secondary);
+}

@@ -1,0 +1,58 @@
+/* src/styles/cards.css */
+.card {
+  background-color: var(--bg-card);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.card-header {
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--color-gray-50);
+  flex-shrink: 0;
+}
+.card-header h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.card-body {
+  padding: var(--spacing-4);
+  flex-grow: 0;
+  overflow: visible;
+}
+.uploader-card .card-body {
+  flex-grow: 0;
+  overflow: visible;
+}
+.left-sidebar .card.actions-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.left-sidebar .card.actions-card .card-body {
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  flex-grow: 0;
+}
+.text-danger {
+  color: var(--color-danger);
+}
+.image-placeholder {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-height: 150px;
+  padding: var(--spacing-4);
+  background-color: var(--color-gray-100);
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  text-align: center;
+  cursor: pointer;
+}
+.image-placeholder:hover {
+  background-color: var(--bg-hover);
+}

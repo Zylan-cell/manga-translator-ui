@@ -1,0 +1,91 @@
+/* src/styles/responsive.css */
+
+/* --- Стили для больших экранов (Desktop, > 1024px) --- */
+@media (min-width: 1025px) {
+  .main-content-grid {
+    grid-template-columns: 320px minmax(0, 1fr) 320px;
+    grid-template-areas: "left main right";
+  }
+
+  .main-content-grid .left-sidebar {
+    grid-area: left;
+  }
+  .main-content-grid .main-workspace {
+    grid-area: main;
+  }
+  .main-content-grid .right-sidebar {
+    grid-area: right;
+  }
+
+  /* На десктопе кнопки управления панелями не нужны */
+  .header-controls {
+    display: none;
+  }
+}
+
+/* --- Стили для маленьких экранов (Mobile, <= 1024px) --- */
+@media (max-width: 1024px) {
+  /* Общие настройки */
+  .app-main {
+    padding: 0; /* Убираем отступы, чтобы канвас был на весь экран */
+  }
+
+  .main-content-grid {
+    display: grid;
+    /* Одна колонка занимает все место */
+    grid-template-columns: 1fr;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Основное рабочее пространство всегда видно */
+  .main-workspace {
+    grid-column: 1;
+    grid-row: 1;
+    z-index: 1;
+  }
+
+  /* Боковые панели по умолчанию скрыты за экраном */
+  .left-sidebar,
+  .right-sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 85%; /* Панели занимают 85% ширины экрана */
+    max-width: 320px;
+    background-color: var(--bg-sidebar);
+    z-index: 2000; /* Выше чем оверлей */
+    transition: transform 0.3s ease-in-out;
+    padding: var(--spacing-4);
+    overflow-y: auto; /* Включаем скролл внутри панелей */
+    box-shadow: var(--shadow-lg);
+  }
+
+  .left-sidebar {
+    transform: translateX(-100%);
+    border-right: 1px solid var(--border-color);
+  }
+  .right-sidebar {
+    right: 0;
+    transform: translateX(100%);
+    border-left: 1px solid var(--border-color);
+  }
+
+  /* Классы для показа панелей */
+  .left-sidebar.is-open {
+    transform: translateX(0);
+  }
+  .right-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  /* Кнопки в шапке для мобильных */
+  .app-header {
+    display: flex;
+    justify-content: space-between;
+  }
+  .header-controls {
+    display: flex;
+    gap: var(--spacing-2);
+  }
+}
