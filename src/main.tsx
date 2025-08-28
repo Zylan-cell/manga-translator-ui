@@ -13,5 +13,6 @@ import "./styles/results.css";
 import "./styles/sidebars.css";
 import "./components/ui/FloatingWindow.css";
 import "./components/ui/Settings.css";
+import "./styles/viewer.css"; // Добавляем новые стили
 
 render(<App />, document.getElementById("root")!);

@@ -14,7 +14,7 @@ const AppHeader: FunctionalComponent<AppHeaderProps> = ({
 }) => {
   return (
     <header class="app-header">
-      <div class="header-controls">
+      <div class="header-left">
         <button
           class="btn btn-secondary btn-icon"
           onClick={onToggleLeftSidebar}
@@ -24,15 +24,14 @@ const AppHeader: FunctionalComponent<AppHeaderProps> = ({
         </button>
       </div>
 
-      <button
-        class="btn btn-secondary btn-icon"
-        onClick={onShowSettings}
-        title="Settings"
-      >
-        <SettingsIcon />
-      </button>
-
-      <div class="header-controls">
+      <div class="header-right">
+        <button
+          class="btn btn-secondary btn-icon"
+          onClick={onShowSettings}
+          title="Settings"
+        >
+          <SettingsIcon />
+        </button>
         <button
           class="btn btn-secondary btn-icon"
           onClick={onToggleRightSidebar}

@@ -19,16 +19,21 @@ export function getHandleAtPos(
   box: BoundingBox,
   scale: number
 ): Handle | null {
-  const s = HANDLE_SIZE / scale / 2;
+  // делаем «зону» побольше и масштабозависимой
+  const tol = Math.max(HANDLE_SIZE, 12) / scale;
+  const half = tol / 2;
+
   const handles: Record<Handle, { x: number; y: number }> = {
     topLeft: { x: box.x1, y: box.y1 },
     topRight: { x: box.x2, y: box.y1 },
     bottomLeft: { x: box.x1, y: box.y2 },
     bottomRight: { x: box.x2, y: box.y2 },
   };
+
   for (const [name, pos] of Object.entries(handles)) {
-    if (Math.abs(imgX - pos.x) < s && Math.abs(imgY - pos.y) < s)
+    if (Math.abs(imgX - pos.x) <= half && Math.abs(imgY - pos.y) <= half) {
       return name as Handle;
+    }
   }
   return null;
 }

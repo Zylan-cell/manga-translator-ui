@@ -1,6 +1,6 @@
 import { useCallback } from "preact/hooks";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { DeepLXResponse, DetectedTextItem, LoadingState } from "../types";
 
 type SetLoading = (updater: (prev: LoadingState) => LoadingState) => void;
@@ -14,6 +14,7 @@ interface UseTranslationArgs {
   selectedModel: string;
   translationUrl: string;
   systemPrompt: string;
+  deeplOnly: boolean;
   enableTwoStepTranslation: boolean;
   deeplxUrl: string;
   deeplxApiKey: string;
@@ -22,6 +23,7 @@ interface UseTranslationArgs {
   setIsLoading: SetLoading;
   onStreamUpdate: (content: string) => void;
   onStreamEnd: () => void;
+  deeplTargetLang: string; // e.g. "RU"
 }
 
 function stripCodeFences(s: string): string {
@@ -62,7 +64,7 @@ function tryParseJsonArray<T = any>(raw: string): T[] | null {
     const v = JSON.parse(raw);
     return Array.isArray(v) ? (v as T[]) : null;
   } catch {}
-  const fixed = raw.replace(/,(\s*[}\]])/g, "$1");
+  const fixed = raw.replace(/,(\s*[}```])/g, "$1");
   try {
     const v = JSON.parse(fixed);
     return Array.isArray(v) ? (v as T[]) : null;
@@ -77,7 +79,7 @@ function parseNumberedLinesToPairs(
     .map((l) => l.trim())
     .filter(Boolean);
   const result: { id: number; translation: string }[] = [];
-  const rx = /^\s*(\d+)[\.\]\:\-)]\s*(.*)$/;
+  const rx = /^\s*(\d+)[\.```\:\-)]\s*(.*)$/;
   for (const line of lines) {
     const m = line.match(rx);
     if (m) {
@@ -99,6 +101,7 @@ function parseNumberedLinesToPairs(
   }
   return result;
 }
+
 async function chatCompletion(
   apiUrlBase: string,
   model: string,
@@ -122,6 +125,7 @@ async function chatCompletion(
   });
   return resp?.choices?.[0]?.message?.content || "";
 }
+
 function uuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return (crypto as any).randomUUID();
@@ -135,6 +139,7 @@ export function useTranslation({
   selectedModel,
   translationUrl,
   systemPrompt,
+  deeplOnly,
   enableTwoStepTranslation,
   deeplxUrl,
   deeplxApiKey,
@@ -143,6 +148,7 @@ export function useTranslation({
   setIsLoading,
   onStreamUpdate,
   onStreamEnd,
+  deeplTargetLang,
 }: UseTranslationArgs) {
   const translateAllBubbles = useCallback(async () => {
     if (!detectedItems || !detectedItems.length || editMode) return;
@@ -151,13 +157,42 @@ export function useTranslation({
     );
     if (!itemsToTranslate.length) return;
 
+    if (deeplOnly) {
+      const texts = itemsToTranslate.map((i) => i.ocrText!);
+      try {
+        const resp = await invoke<DeepLXResponse>("translate_deeplx", {
+          apiUrl: deeplxUrl,
+          apiKey: deeplxApiKey,
+          texts, // передаем массив
+          targetLang: deeplTargetLang || "RU",
+          sourceLang: null, // автоопределение
+        });
+        if (resp.code !== 200 || !resp.data) throw new Error("DeepLx failed");
+        const lines = resp.data.split("\n");
+        const map = new Map<number, string>();
+        itemsToTranslate.forEach((it, idx) => {
+          if (lines[idx]) map.set(it.id, lines[idx]);
+        });
+        setDetectedItems((prev) =>
+          (prev || []).map((item) => ({
+            ...item,
+            translation: map.get(item.id) ?? item.translation ?? null,
+          }))
+        );
+      } catch (e: any) {
+        console.error("DeepL-only translation failed:", e);
+        alert(`DeepL-only translation failed: ${e.message}`);
+      } finally {
+        setIsLoading((p) => ({ ...p, translate: false }));
+      }
+      return; // выходим, LLM не запускаем
+    }
+
     setIsLoading((p) => ({ ...p, translate: true }));
     setDetectedItems((prev) =>
       (prev || []).map((item) => ({ ...item, translation: null }))
     );
-    if (streamTranslation) {
-      onStreamUpdate("");
-    }
+    if (streamTranslation) onStreamUpdate("");
 
     try {
       const numberedJP = itemsToTranslate
@@ -167,9 +202,8 @@ export function useTranslation({
       if (streamTranslation) {
         const streamId = uuid();
         let buffer = "";
-        let unlisten: UnlistenFn | null = null;
 
-        unlisten = await listen("llm-stream", async (ev) => {
+        listen("llm-stream", async (ev) => {
           const p = ev.payload as any;
           if (!p || p.id !== streamId) return;
 
@@ -179,7 +213,13 @@ export function useTranslation({
           }
 
           if (p.done) {
-            if (unlisten) unlisten();
+            // ЛОГИ: финальный английский
+            console.log(
+              "=== English (LLM stream) ===\n" +
+                buffer +
+                "\n============================"
+            );
+
             const finalPairsEN = parseNumberedLinesToPairs(buffer);
             if (!finalPairsEN.length)
               throw new Error("Could not parse final streamed response.");
@@ -187,23 +227,23 @@ export function useTranslation({
             let finalResults = new Map<number, string>();
 
             if (enableTwoStepTranslation) {
-              onStreamUpdate(buffer + "\n\nTranslating to Russian...");
-              const textsEN = finalPairsEN.map((p) => p.translation);
+              onStreamUpdate(buffer + "\n\nTranslating via DeepLx...");
+              const textsEN = finalPairsEN.map((p: any) => p.translation);
               const resp2 = await invoke<DeepLXResponse>("translate_deeplx", {
                 apiUrl: deeplxUrl,
                 apiKey: deeplxApiKey,
                 texts: textsEN,
-                targetLang: "RU",
+                targetLang: deeplTargetLang || "RU",
                 sourceLang: "EN",
               });
               if (resp2.code !== 200 || !resp2.data)
-                throw new Error(`Step 2 (EN->RU) failed`);
+                throw new Error(`Step 2 (EN->${deeplTargetLang}) failed`);
               const ruLines = resp2.data.split("\n");
-              finalPairsEN.forEach((p, idx) => {
+              finalPairsEN.forEach((p: any, idx: number) => {
                 if (ruLines[idx]) finalResults.set(p.id, ruLines[idx]);
               });
             } else {
-              finalPairsEN.forEach((p) =>
+              finalPairsEN.forEach((p: any) =>
                 finalResults.set(p.id, p.translation)
               );
             }
@@ -237,15 +277,24 @@ export function useTranslation({
           },
           streamId,
         });
+
+        // отписка сделается автоматически когда p.done
         return;
       }
 
+      // Non-stream
       const rawEN = await chatCompletion(
         translationUrl,
         selectedModel,
         systemPrompt,
         numberedJP
       );
+
+      // ЛОГИ: английский ответ
+      console.log(
+        "=== English (LLM) ===\n" + rawEN + "\n====================="
+      );
+
       const pairsEN = parseNumberedLinesToPairs(rawEN);
       if (!pairsEN.length) throw new Error("Could not parse response.");
 
@@ -256,14 +305,16 @@ export function useTranslation({
           apiUrl: deeplxUrl,
           apiKey: deeplxApiKey,
           texts: textsEN,
-          targetLang: "RU",
+          targetLang: deeplTargetLang || "RU",
           sourceLang: "EN",
         });
+        if (resp2.code !== 200 || !resp2.data) throw new Error("DeepLx failed");
         const ruLines = resp2.data.split("\n");
         pairsEN.forEach((p, idx) => finalResults.set(p.id, ruLines[idx]));
       } else {
         pairsEN.forEach((p) => finalResults.set(p.id, p.translation));
       }
+
       setDetectedItems((prev) =>
         (prev || []).map((item) => ({
           ...item,
@@ -275,9 +326,7 @@ export function useTranslation({
       alert(`Translation failed: ${e.message}`);
       onStreamEnd();
     } finally {
-      if (!streamTranslation) {
-        setIsLoading((p) => ({ ...p, translate: false }));
-      }
+      if (!streamTranslation) setIsLoading((p) => ({ ...p, translate: false }));
     }
   }, [
     detectedItems,
@@ -285,6 +334,7 @@ export function useTranslation({
     selectedModel,
     translationUrl,
     systemPrompt,
+    deeplOnly,
     enableTwoStepTranslation,
     deeplxUrl,
     deeplxApiKey,
@@ -293,6 +343,7 @@ export function useTranslation({
     setIsLoading,
     onStreamUpdate,
     onStreamEnd,
+    deeplTargetLang,
   ]);
 
   return { translateAllBubbles };

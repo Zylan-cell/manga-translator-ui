@@ -1,13 +1,23 @@
-#![cfg_attr(
-  all(not(debug_assertions), target_os = "windows"),
-  windows_subsystem = "windows"
-)]
+pub mod folder;
+pub mod fonts;
+pub mod project;
 
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct ImageInfo {
+    pub name: String,
+    pub path: String,
+    pub data_url: String,
+    pub thumbnail: String,
+}
+
+// Импортируем и реэкспортируем основные команды
 use serde_json::Value;
 use tauri::Emitter;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-async fn handle_response(response: reqwest::Response) -> Result<Value, String> {
+pub async fn handle_response(response: reqwest::Response) -> Result<Value, String> {
     let status = response.status();
     if status.is_success() {
         response
@@ -24,14 +34,14 @@ async fn handle_response(response: reqwest::Response) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn fetch_models(api_url: String) -> Result<Value, String> {
+pub async fn fetch_models(api_url: String) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let response = client.get(&api_url).send().await.map_err(|e| e.to_string())?;
     handle_response(response).await
 }
 
 #[tauri::command]
-async fn detect_text_areas(api_url: String, image_data: String) -> Result<Value, String> {
+pub async fn detect_text_areas(api_url: String, image_data: String) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/detect_text_areas", api_url.trim_end_matches('/'));
     let payload = serde_json::json!({ "image_data": image_data });
@@ -40,7 +50,7 @@ async fn detect_text_areas(api_url: String, image_data: String) -> Result<Value,
 }
 
 #[tauri::command]
-async fn detect_panels(api_url: String, image_data: String) -> Result<Value, String> {
+pub async fn detect_panels(api_url: String, image_data: String) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/detect_panels", api_url.trim_end_matches('/'));
     let payload = serde_json::json!({ "image_data": image_data });
@@ -49,10 +59,9 @@ async fn detect_panels(api_url: String, image_data: String) -> Result<Value, Str
 }
 
 #[tauri::command]
-async fn recognize_images_batch(
+pub async fn recognize_images_batch(
     api_url: String,
     images_data: Vec<String>,
-    // NEW optional params:
     engine: Option<String>,
     langs: Option<Vec<String>>,
     auto_rotate: Option<bool>,
@@ -71,7 +80,7 @@ async fn recognize_images_batch(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    // reuse common handler
+    
     let status = response.status();
     if status.is_success() {
         response
@@ -88,8 +97,7 @@ async fn recognize_images_batch(
 }
 
 #[tauri::command]
-async fn translate_text(api_url: String, payload: Value) -> Result<Value, String> {
-    // Лог последнего юзер-сообщения
+pub async fn translate_text(api_url: String, payload: Value) -> Result<Value, String> {
     if let Some(messages) = payload.get("messages").and_then(|m| m.as_array()) {
         if let Some(last_message) = messages.last() {
             if let Some(content) = last_message.get("content").and_then(|c| c.as_str()) {
@@ -114,7 +122,7 @@ async fn translate_text(api_url: String, payload: Value) -> Result<Value, String
 }
 
 #[tauri::command]
-async fn translate_text_stream(window: tauri::Window, api_url: String, payload: Value, stream_id: String) -> Result<(), String> {
+pub async fn translate_text_stream(window: tauri::Window, api_url: String, payload: Value, stream_id: String) -> Result<(), String> {
     if let Some(messages) = payload.get("messages").and_then(|m| m.as_array()) {
         if let Some(last_message) = messages.last() {
             if let Some(content) = last_message.get("content").and_then(|c| c.as_str()) {
@@ -159,7 +167,7 @@ async fn translate_text_stream(window: tauri::Window, api_url: String, payload: 
 }
 
 #[tauri::command]
-async fn translate_deeplx(
+pub async fn translate_deeplx(
     api_url: String,
     api_key: Option<String>,
     texts: Vec<String>,
@@ -189,7 +197,7 @@ async fn translate_deeplx(
 }
 
 #[tauri::command]
-async fn inpaint_image(api_url: String, image_data: String, mask_data: String) -> Result<Value, String> {
+pub async fn inpaint_image(api_url: String, image_data: String, mask_data: String) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/inpaint", api_url.trim_end_matches('/'));
     let payload = serde_json::json!({ "image_data": image_data, "mask_data": mask_data });
@@ -198,7 +206,7 @@ async fn inpaint_image(api_url: String, image_data: String, mask_data: String) -
 }
 
 #[tauri::command]
-async fn inpaint_text_auto(api_url: String, image_data: String, boxes: Option<Vec<Vec<i32>>>, dilate: Option<i32>) -> Result<Value, String> {
+pub async fn inpaint_text_auto(api_url: String, image_data: String, boxes: Option<Vec<Vec<i32>>>, dilate: Option<i32>) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/inpaint_auto_text", api_url.trim_end_matches('/'));
     let payload = serde_json::json!({ "image_data": image_data, "boxes": boxes, "dilate": dilate.unwrap_or(2) });
@@ -207,7 +215,7 @@ async fn inpaint_text_auto(api_url: String, image_data: String, boxes: Option<Ve
 }
 
 #[tauri::command]
-async fn fetch_image(url: String) -> Result<String, String> {
+pub async fn fetch_image(url: String) -> Result<String, String> {
     let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
@@ -217,29 +225,8 @@ async fn fetch_image(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn read_file_b64(path: String) -> Result<String, String> {
+pub async fn read_file_b64(path: String) -> Result<String, String> {
     use std::fs;
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
     Ok(STANDARD.encode(bytes))
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            fetch_models,
-            detect_text_areas,
-            detect_panels,
-            recognize_images_batch,
-            translate_text,
-            translate_text_stream,
-            translate_deeplx,
-            inpaint_image,
-            inpaint_text_auto,
-            fetch_image,
-            read_file_b64
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }

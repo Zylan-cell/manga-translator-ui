@@ -18,6 +18,9 @@ interface UseOcrArgs {
   apiBaseUrl: string;
   setDetectedItems: SetItems;
   setIsLoading: SetLoading;
+  ocrEngine: "auto" | "manga" | "rapid" | "easy";
+  easyOcrLangs: string;
+  ocrAutoRotate: boolean;
 }
 
 export function useOcr({
@@ -27,6 +30,9 @@ export function useOcr({
   apiBaseUrl,
   setDetectedItems,
   setIsLoading,
+  ocrEngine,
+  easyOcrLangs,
+  ocrAutoRotate,
 }: UseOcrArgs) {
   const recognizeAllBubbles = useCallback(async () => {
     if (!imageSrc || !detectedItems || !detectedItems.length || editMode)
@@ -47,8 +53,8 @@ export function useOcr({
               reject(new Error("2D context error"));
               return;
             }
-            const w = box.x2 - box.x1;
-            const h = box.y2 - box.y1;
+            const w = box.x2 - box.x1,
+              h = box.y2 - box.y1;
             canvas.width = w;
             canvas.height = h;
             ctx.drawImage(img, box.x1, box.y1, w, h, 0, 0, w, h);
@@ -63,13 +69,22 @@ export function useOcr({
       );
       const base64Images = croppedImages.map((d) => d.split(",")[1]);
 
+      const langsArr = easyOcrLangs
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
       const data = await invoke<RecognizeBatchResponse>(
         "recognize_images_batch",
         {
           apiUrl: apiBaseUrl,
           imagesData: base64Images,
+          engine: ocrEngine,
+          langs: ocrEngine === "easy" ? langsArr : undefined,
+          autoRotate: ocrAutoRotate,
         }
       );
+
       if (!data?.results) throw new Error("Invalid OCR response");
 
       setDetectedItems((prev) =>
@@ -91,6 +106,9 @@ export function useOcr({
     apiBaseUrl,
     setDetectedItems,
     setIsLoading,
+    ocrEngine,
+    easyOcrLangs,
+    ocrAutoRotate,
   ]);
 
   return { recognizeAllBubbles };

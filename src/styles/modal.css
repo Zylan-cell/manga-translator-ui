@@ -1,3 +1,4 @@
+/* полноэкранный контейнер для пользовательского канваса */
 .fullscreen-canvas-container {
   position: fixed;
   top: 0;
@@ -7,7 +8,6 @@
   background-color: #1f2937;
   z-index: 2000;
 }
-
 .fullscreen-exit-btn {
   position: absolute;
   top: 1rem;
@@ -15,6 +15,7 @@
   z-index: 2001;
 }
 
+/* Пелена модалки */
 .settings-modal-overlay {
   position: fixed;
   top: 0;
@@ -29,34 +30,53 @@
   backdrop-filter: blur(4px);
 }
 
+/* Контент модалки */
 .settings-modal-content {
   background-color: var(--bg-main);
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 600px;
+  max-width: 760px; /* шире, чем было */
   max-height: 90vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+/* Хедер модалки */
 .settings-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: var(--spacing-3) var(--spacing-4);
   border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-card);
   flex-shrink: 0;
 }
-
 .settings-modal-header h2 {
   margin: 0;
   font-size: var(--font-size-lg);
 }
 
+/* Тело модалки со скроллом */
 .settings-modal-body {
   padding: var(--spacing-4);
   overflow-y: auto;
   flex-grow: 1;
+}
+
+/* Кнопка закрытия */
+.close-button {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.close-button:hover {
+  background-color: var(--bg-hover);
 }

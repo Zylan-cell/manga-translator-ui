@@ -1,44 +1,42 @@
-/* src/styles/cards.css */
 .card {
   background-color: var(--bg-card);
   border-radius: var(--border-radius);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
+
 .card-header {
   padding: var(--spacing-3) var(--spacing-4);
   border-bottom: 1px solid var(--border-color);
   background-color: var(--color-gray-50);
   flex-shrink: 0;
 }
+
 .card-header h2 {
   margin: 0;
   font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
+
 .card-body {
   padding: var(--spacing-4);
-  flex-grow: 0;
-  overflow: visible;
+  flex-grow: 1;
+  overflow: auto;
 }
+
 .uploader-card .card-body {
-  flex-grow: 0;
-  overflow: visible;
+  padding: var(--spacing-4);
 }
-.left-sidebar .card.actions-card {
-  flex: 0 0 auto;
+
+.actions-card .card-body {
   display: flex;
   flex-direction: column;
+  gap: var(--spacing-3);
 }
-.left-sidebar .card.actions-card .card-body {
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-  flex-grow: 0;
-}
-.text-danger {
-  color: var(--color-danger);
-}
+
 .image-placeholder {
   display: flex;
   flex-direction: column;
@@ -48,11 +46,25 @@
   min-height: 150px;
   padding: var(--spacing-4);
   background-color: var(--color-gray-100);
+  border: 2px dashed var(--color-gray-300);
   border-radius: var(--border-radius);
   color: var(--text-secondary);
   text-align: center;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
+
 .image-placeholder:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--color-gray-200);
+  border-color: var(--color-primary);
+}
+
+.image-placeholder.bg-hover {
+  background-color: var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.image-placeholder.error {
+  border-color: var(--color-danger);
+  background-color: rgba(239, 68, 68, 0.05);
 }

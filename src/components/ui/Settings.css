@@ -1,71 +1,99 @@
+/* Контейнер внутри модалки */
 .settings-modal-body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
 }
 
-.settings-modal-body h3 {
-  margin-top: 0;
-  margin-bottom: 0rem;
+/* Раздел (с секционным заголовком) */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.5rem;
+  padding-bottom: 1rem;
+}
+.settings-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.settings-section h3 {
+  margin: 0;
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
 }
 
+/* Поле настроек */
 .settings-field {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  width: 100%;
 }
-
 .settings-field label {
   font-weight: var(--font-weight-medium);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
-.settings-field input[type="text"],
-.settings-field select,
-.settings-field textarea {
+/* Ряд из нескольких контролов (например 2 чекбокса в одну строку) */
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+/* Инлайн переключатель (чекбокс + подпись) */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+/* Подпись/подсказка под контролом */
+.hint {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* Поля ввода */
+.input,
+.select,
+.textarea {
   width: 100%;
   box-sizing: border-box;
   padding: var(--spacing-2) var(--spacing-3);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   background-color: var(--bg-card);
+  color: var(--text-primary);
   font-size: var(--font-size-base);
-  color: var(--text-primary);
 }
-
-.settings-field textarea.system-prompt-textarea {
-  font-family: var(--font-family-mono);
+.select {
+  padding-right: 2rem;
+}
+.textarea {
+  min-height: 100px;
   resize: vertical;
-  min-height: 80px;
+  font-family: var(--font-family-mono);
 }
 
-.settings-field .model-select-group {
-  display: flex;
-  gap: var(--spacing-2);
+/* Группа выбора модели + кнопка обновления */
+.model-select-group {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
 }
 
-.settings-field .model-select-group select {
-  flex-grow: 1;
-}
-
-.settings-field .model-select-group .btn {
-  flex-shrink: 0;
-}
-
-.control-toggle-setting {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  cursor: pointer;
-  padding: var(--spacing-2);
-  border: 1px solid transparent;
-  border-radius: var(--border-radius);
+/* Адаптив под узкие экраны */
+@media (max-width: 640px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+  }
+  .model-select-group {
+    grid-template-columns: 1fr;
+  }
 }

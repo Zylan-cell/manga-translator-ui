@@ -6,11 +6,23 @@ export interface BoundingBox {
   confidence: number;
 }
 
+export interface TextProperties {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: string;
+  fontStyle: string;
+  textDecoration: string;
+  color: string;
+  strokeColor: string;
+  strokeWidth: number;
+}
+
 export interface DetectedTextItem {
   id: number;
   box: BoundingBox;
   ocrText: string | null;
   translation: string | null;
+  textProperties?: TextProperties;
 }
 
 export interface LoadingState {
@@ -36,9 +48,18 @@ export interface TextItem {
   color: string;
 }
 
+export interface ImageInfo {
+  name: string;
+  path: string;
+  dataUrl: string;
+  thumbnail: string;
+}
+
 // Типы для API
 export type ModelList = { data: { id: string }[] };
-export type PanelDetectionResult = { panels: [number, number, number, number][] };
+export type PanelDetectionResult = {
+  panels: [number, number, number, number][];
+};
 export interface DeepLXResponse {
   code: number;
   data: string;
@@ -52,4 +73,11 @@ export interface InpaintResponse {
 }
 export interface YoloDetectionResult {
   boxes: BoundingBox[];
+}
+
+export interface AppSettings {
+  ocrEngine: "manga" | "easy";
+  easyOcrLangs: string;
+  ocrAutoRotate: boolean;
+  deeplTargetLang: string;
 }

@@ -9,49 +9,76 @@ export interface LaidOutTextItem extends DetectedTextItem {
   };
 }
 
-function calculateTextLayout(
+function breakByChars(
+  ctx: CanvasRenderingContext2D,
+  s: string,
+  maxWidth: number
+) {
+  const out: string[] = [];
+  let cur = "";
+  for (const ch of s) {
+    const test = cur + ch;
+    if (ctx.measureText(test).width > maxWidth && cur) {
+      out.push(cur);
+      cur = ch;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function calcLayout(
   ctx: CanvasRenderingContext2D,
   text: string,
   box: BoundingBox
 ) {
   const padding = 4;
-  const maxWidth = box.x2 - box.x1 - padding * 2;
-  const maxHeight = box.y2 - box.y1 - padding * 2;
+  const maxW = Math.max(8, box.x2 - box.x1 - padding * 2);
+  const maxH = Math.max(8, box.y2 - box.y1 - padding * 2);
 
-  if (maxWidth <= 0 || maxHeight <= 0 || !text) {
-    return { lines: [text || ""], fontSize: 10, lineHeight: 12 };
-  }
+  if (!text) return { lines: [""], fontSize: 10, lineHeight: 12 };
 
-  let fontSize = maxHeight;
-  let lines: string[] = [];
-  let lineHeight = 0;
+  let fontSize = Math.min(64, maxH);
+  let chosen = { lines: [text], fontSize: 10, lineHeight: 12 };
 
-  while (fontSize > 6) {
+  // цикл уменьшения шрифта
+  while (fontSize >= 6) {
     ctx.font = `bold ${fontSize}px "Arial Black", sans-serif`;
-    lineHeight = fontSize * 1.2;
-    const words = text.split(" ");
-    lines = [];
-    let currentLine = words[0] || "";
+    const lh = Math.ceil(fontSize * 1.2);
 
+    // сперва пробуем разбивку по словам
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let cur = words[0] || "";
     for (let i = 1; i < words.length; i++) {
-      const word = words[i];
-      const testLine = currentLine + " " + word;
-      const metrics = ctx.measureText(testLine);
-      if (metrics.width > maxWidth && currentLine.length > 0) {
-        lines.push(currentLine);
-        currentLine = word;
+      const test = cur + " " + words[i];
+      if (ctx.measureText(test).width > maxW && cur) {
+        lines.push(cur);
+        cur = words[i];
       } else {
-        currentLine = testLine;
+        cur = test;
       }
     }
-    lines.push(currentLine);
+    if (cur) lines.push(cur);
 
-    if (lines.length * lineHeight <= maxHeight) {
+    // если хоть одна строка всё ещё длиннее maxW — делим её посимвольно
+    for (let i = 0; i < lines.length; i++) {
+      if (ctx.measureText(lines[i]).width > maxW) {
+        const broken = breakByChars(ctx, lines[i], maxW);
+        lines.splice(i, 1, ...broken);
+        i += broken.length - 1;
+      }
+    }
+
+    if (lines.length * lh <= maxH) {
+      chosen = { lines, fontSize, lineHeight: lh };
       break;
     }
-    fontSize--;
+    fontSize -= 1;
   }
-  return { lines, fontSize, lineHeight };
+  return chosen;
 }
 
 export function useTextLayout(
@@ -61,31 +88,24 @@ export function useTextLayout(
     null
   );
 
-  const measurementContext = useMemo(() => {
+  const ctx = useMemo(() => {
     if (typeof window === "undefined") return null;
-    const canvas = document.createElement("canvas");
-    return canvas.getContext("2d");
+    const c = document.createElement("canvas");
+    return c.getContext("2d");
   }, []);
 
   useEffect(() => {
-    if (!items || !measurementContext) {
+    if (!items || !ctx) {
       setLaidOutItems(null);
       return;
     }
-
-    const newItems = items.map((item) => {
-      if (!item.translation) {
-        return item;
-      }
-      const layout = calculateTextLayout(
-        measurementContext,
-        item.translation,
-        item.box
-      );
-      return { ...item, layout };
+    const next = items.map((it) => {
+      if (!it.translation) return it;
+      const layout = calcLayout(ctx, it.translation, it.box);
+      return { ...it, layout };
     });
-    setLaidOutItems(newItems);
-  }, [items, measurementContext]);
+    setLaidOutItems(next);
+  }, [items, ctx]);
 
   return laidOutItems;
 }

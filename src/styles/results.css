@@ -10,6 +10,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
+  position: relative;
 }
 
 .result-item {
@@ -19,6 +20,17 @@
   padding: var(--spacing-2) var(--spacing-3);
   transition: all 0.2s ease;
   border-left: 4px solid transparent;
+  transition: transform 120ms ease, box-shadow 120ms ease,
+    background-color 120ms ease;
+  will-change: transform;
+  cursor: pointer;
+}
+
+.result-item.dragging {
+  opacity: 0.9;
+  box-shadow: var(--shadow-lg);
+  background-color: #fff;
+  cursor: grabbing;
 }
 
 .result-item:not(.editable-item):hover {
@@ -108,4 +120,56 @@
   padding: var(--spacing-4);
   text-align: center;
   color: var(--text-secondary);
+}
+
+.drag-ghost {
+  opacity: 0.9;
+  pointer-events: none;
+  box-shadow: var(--shadow-lg);
+}
+/* Подсказка места вставки */
+.result-item.drop-before {
+  box-shadow: inset 0 3px 0 var(--color-primary);
+}
+.result-item.drop-after {
+  box-shadow: inset 0 -3px 0 var(--color-primary);
+}
+
+/* Немного “живости” при перетаскивании */
+.result-item {
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.result-item.dragging {
+  opacity: 0.9;
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+.drag-ghost {
+  opacity: 0.9;
+  pointer-events: none;
+  box-shadow: var(--shadow-lg);
+}
+
+/* линия/зазор для места вставки */
+.drop-marker {
+  height: 10px;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #93c5fd 0%, #3b82f6 50%, #93c5fd 100%);
+  opacity: 0.9;
+}
+
+/* плавность и “граббинг” */
+.result-item {
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.result-item.dragging {
+  opacity: 0.92;
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+.drag-ghost {
+  opacity: 0.92;
+  pointer-events: none;
+  box-shadow: var(--shadow-lg);
 }

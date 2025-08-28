@@ -12,61 +12,10 @@ const ImageUploader: FunctionalComponent<ImageUploaderProps> = ({
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleGlobalPaste = (event: ClipboardEvent) => {
-      const items = event.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.type.indexOf("image") !== -1) {
-          const blob = item.getAsFile();
-          if (blob) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const dataUrl = e.target?.result as string;
-              if (dataUrl) {
-                onImageUpload(dataUrl);
-                setError(null);
-              }
-            };
-            reader.onerror = () =>
-              setError("Error reading image from clipboard.");
-            reader.readAsDataURL(blob);
-            break;
-          }
-        }
-      }
-    };
-    window.addEventListener("paste", handleGlobalPaste);
-    return () => window.removeEventListener("paste", handleGlobalPaste);
-  }, [onImageUpload]);
-
-  const handleFileChange = (e: Event) => {
-    const target = e.target as HTMLInputElement;
-    processFile(target.files?.[0]);
-  };
-
-  const handleDrag = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
-    if (e.type === "dragleave") setDragActive(false);
-  };
-
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    const file = e.dataTransfer?.files?.[0];
-    processFile(file);
-  };
-
-  const processFile = (file?: File) => {
-    if (!file) {
-      setError("No file selected");
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
+  // Превращаем Blob -> DataURL и отдаём наверх
+  const processBlob = (blob?: Blob) => {
+    if (!blob) return;
+    if (!blob.type.startsWith("image/")) {
       setError("Please select an image file");
       return;
     }
@@ -80,7 +29,172 @@ const ImageUploader: FunctionalComponent<ImageUploaderProps> = ({
       }
     };
     reader.onerror = () => setError("Error reading file");
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
+  };
+
+  // Попытка скачать картинку обычным fetch (может упасть из-за CORS)
+  const tryFetchAsBlob = async (url: string): Promise<Blob> => {
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const buf = await res.arrayBuffer();
+    return new Blob([buf]);
+  };
+
+  // Фоллбек: через Rust-команду (если добавлена) — обходит CORS/хотлинк
+  const tryFetchViaTauri = async (url: string): Promise<Blob> => {
+    // динамический импорт, чтобы не тянуть лишнего в бандл, если не понадобится
+    const { invoke } = await import("@tauri-apps/api/core");
+    const b64 = await invoke<string>("fetch_image", { url });
+    // декодируем base64 → Uint8Array → Blob
+    const bin = atob(b64);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8.buffer]);
+  };
+
+  const extractUrlFromUriList = (text: string): string | null => {
+    const lines = text.split(/\r?\n/).map((l) => l.trim());
+    for (const line of lines) {
+      if (!line || line.startsWith("#")) continue;
+      return line;
+    }
+    return null;
+  };
+
+  const extractImgSrcFromHtml = (html: string): string | null => {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const img = doc.querySelector("img");
+    return img?.src || null;
+  };
+
+  // Универсальная обработка DataTransfer (drop из браузера/проводника)
+  const handleDataTransfer = async (dt: DataTransfer): Promise<boolean> => {
+    // 1) Файлы напрямую
+    if (dt.files && dt.files.length > 0) {
+      const file =
+        Array.from(dt.files).find((f) => f.type.startsWith("image/")) ||
+        dt.files[0];
+      processBlob(file);
+      return true;
+    }
+
+    // 2) items как file
+    if (dt.items && dt.items.length > 0) {
+      const fileItem = Array.from(dt.items).find(
+        (it) => it.kind === "file" && it.type.startsWith("image/")
+      );
+      if (fileItem) {
+        const file = fileItem.getAsFile();
+        if (file) {
+          processBlob(file);
+          return true;
+        }
+      }
+    }
+
+    // 3) text/uri-list (браузер отдаёт прямую ссылку)
+    const uriList = dt.getData("text/uri-list");
+    const urlFromList = uriList ? extractUrlFromUriList(uriList) : null;
+    if (urlFromList) {
+      try {
+        const blob = await tryFetchAsBlob(urlFromList);
+        processBlob(blob);
+        return true;
+      } catch {
+        try {
+          const blob = await tryFetchViaTauri(urlFromList);
+          processBlob(blob);
+          return true;
+        } catch (e) {
+          console.error(e);
+          setError("Failed to fetch dropped image (CORS/hotlink).");
+        }
+      }
+    }
+
+    // 4) text/html — вытаскиваем <img src="...">
+    const html = dt.getData("text/html");
+    if (html) {
+      const src = extractImgSrcFromHtml(html);
+      if (src) {
+        try {
+          const blob = await tryFetchAsBlob(src);
+          processBlob(blob);
+          return true;
+        } catch {
+          try {
+            const blob = await tryFetchViaTauri(src);
+            processBlob(blob);
+            return true;
+          } catch (e) {
+            console.error(e);
+            setError("Failed to fetch dropped image (CORS/hotlink).");
+          }
+        }
+      }
+    }
+
+    return false;
+  };
+
+  useEffect(() => {
+    // Вставка из буфера обмена (Ctrl+V)
+    const handleGlobalPaste = (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.includes("image")) {
+          const blob = item.getAsFile();
+          if (blob) {
+            processBlob(blob);
+            break;
+          }
+        }
+      }
+    };
+
+    // Предотвращаем дефолтные действия браузера
+    const preventDefaults = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    window.addEventListener("paste", handleGlobalPaste);
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
+      window.addEventListener(ev, preventDefaults, false)
+    );
+
+    return () => {
+      window.removeEventListener("paste", handleGlobalPaste);
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
+        window.removeEventListener(ev, preventDefaults)
+      );
+    };
+  }, [onImageUpload]);
+
+  // Локальная подсветка карточки
+  const handleLocalDrag = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  };
+  const handleLocalLeave = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  };
+  const handleLocalDrop = async (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (!e.dataTransfer) return;
+    try {
+      const ok = await handleDataTransfer(e.dataTransfer);
+      if (!ok) setError("Unsupported drop payload.");
+    } catch (err) {
+      console.error(err);
+      setError("Drop failed. See console.");
+    }
   };
 
   return (
@@ -94,10 +208,10 @@ const ImageUploader: FunctionalComponent<ImageUploaderProps> = ({
           error ? "error" : ""
         }`}
         onClick={() => fileInputRef.current?.click()}
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
+        onDragEnter={handleLocalDrag}
+        onDragOver={handleLocalDrag}
+        onDragLeave={handleLocalLeave}
+        onDrop={handleLocalDrop}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -114,7 +228,7 @@ const ImageUploader: FunctionalComponent<ImageUploaderProps> = ({
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
-        <p class="mt-2">Drag & drop or click to upload</p>
+        <p class="mt-2">Drag & drop image here</p>
         <p
           class="mt-2"
           style={{
@@ -122,14 +236,15 @@ const ImageUploader: FunctionalComponent<ImageUploaderProps> = ({
             color: "var(--text-secondary)",
           }}
         >
-          You can also paste from clipboard (Ctrl+V)
+          Or click to upload / paste from clipboard
         </p>
         {error && <p class="text-danger">{error}</p>}
       </div>
+
       <input
         type="file"
         ref={fileInputRef}
-        onChange={handleFileChange}
+        onChange={(e) => processBlob((e.target as HTMLInputElement).files?.[0])}
         accept="image/*"
         class="hidden"
       />

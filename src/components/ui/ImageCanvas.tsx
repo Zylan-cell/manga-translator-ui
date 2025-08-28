@@ -38,20 +38,10 @@ export default function ImageCanvas(props: ImageCanvasProps) {
     selectedBoxId: props.selectedBoxId,
     editMode: props.editMode,
     isAdding: props.isAdding,
-    textMode: props.textMode,
-    onAddTextAt: props.onAddTextAt,
-    textItems: props.textItems,
     onBoxSelect: props.onBoxSelect,
     onAddBubble: props.onAddBubble,
     onUpdateBubble: props.onUpdateBubble,
-    maskMode: props.maskMode,
-    eraseMode: props.eraseMode,
-    brushSize: props.brushSize,
-    takeManualMaskSnapshot: props.takeManualMaskSnapshot,
-    onMaskSnapshot: props.onMaskSnapshot,
-    clearMaskSignal: props.clearMaskSignal,
-    onMaskCleared: props.onMaskCleared,
-    onUndoExternal: props.onUndoExternal,
+    textItems: props.textItems,
   });
 
   return (
