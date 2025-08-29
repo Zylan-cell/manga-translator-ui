@@ -1,351 +1,87 @@
-import { useState, useEffect, useCallback, useRef } from "preact/hooks";
-import { invoke } from "@tauri-apps/api/core";
+// src/App.tsx
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import AppHeader from "./components/ui/AppHeader";
-import ImageUploader from "./components/ui/ImageUploader";
 import ImageCanvas from "./components/ui/ImageCanvas";
-import ActionButtons from "./components/ui/ActionButtons";
 import FloatingWindow from "./components/ui/FloatingWindow";
 import Settings from "./components/ui/Settings";
 import ResultDisplay from "./components/ui/ResultDisplay";
 import FullscreenExitIcon from "./assets/icons/fullscreen-exit.svg?react";
+import ImageList from "./components/ui/ImageList";
+import ContextMenu from "./components/ui/ContextMenu";
+import TopProgressBar from "./components/ui/TopProgressBar";
 
-import {
-  DetectedTextItem,
-  LoadingState,
-  FloatingWindowSettings,
-  BoundingBox,
-  ImageInfo,
-} from "./types";
-
+import { DetectedTextItem, LoadingState, BoundingBox } from "./types";
 import { useDetection } from "./hooks/useDetection";
 import { useOcr } from "./hooks/useOcr";
 import { useTranslation } from "./hooks/useTranslation";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useModels } from "./hooks/useModels";
 import { useTextLayout, LaidOutTextItem } from "./hooks/useTextLayout";
+
+import { useSettingsState } from "./hooks/useSettingsState";
+import { useImageLibrary } from "./hooks/useImageLibrary";
+import { useDnDImport } from "./hooks/useDnDImport";
+import { useProcessAll } from "./hooks/useProcessAll";
+import { useContextMenu } from "./hooks/useContextMenu";
+import { ProgressState } from "./types/ui";
 import { drawPrecalculatedText } from "./components/canvas/draw";
 
-const DEFAULT_SYSTEM_PROMPT = `You are an expert manga translator.
-Translate each numbered Japanese line into natural English.
-Return the result as numbered lines in the same order.
-Do not add explanations or any extra text.
-Example:
-1. こんにちは -> 1. Hello
-2. さようなら -> 2. Goodbye`;
-
 export default function App() {
-  // Core state
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [detectedItems, setDetectedItems] = useState<DetectedTextItem[] | null>(
     null
   );
   const [selectedBoxId, setSelectedBoxId] = useState<number | null>(null);
-  const [imageList, setImageList] = useState<ImageInfo[]>([]);
-  const [, setCurrentImageIndex] = useState<number>(0);
-
-  // Loading
-  const [isLoading, setIsLoading] = useState<LoadingState>({
-    detect: false,
-    ocr: false,
-    translate: false,
-    models: false,
-  });
-
-  // UI
-  const [streamingLogContent, setStreamingLogContent] = useState<string | null>(
-    null
-  );
   const [showFloatingWindow, setShowFloatingWindow] = useState(false);
   const [floatingWindowPosition, setFloatingWindowPosition] = useState({
     x: 100,
     y: 100,
   });
-  const [floatingWindowSettings, setFloatingWindowSettings] =
-    useState<FloatingWindowSettings>({ showOcr: true, showTranslation: true });
+  const [streamingLogContent, setStreamingLogContent] = useState<string | null>(
+    null
+  );
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isCanvasFullscreen, setCanvasFullscreen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [isAddingBubble, setAddingBubble] = useState(false);
-
+  const [, setIsLoading] = useState<LoadingState>({
+    detect: false,
+    ocr: false,
+    translate: false,
+    models: false,
+  });
+  const [progress, setProgress] = useState<ProgressState>({
+    active: false,
+    current: 0,
+    total: 0,
+    label: "",
+  });
   const undoRef = useRef<() => void>(() => {});
 
-  // Sidebars & mobile overlay
-  const [isLeftSidebarOpen, setLeftSidebarOpen] = useState(false);
-  const [isRightSidebarOpen, setRightSidebarOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState<boolean>(
-    () => window.innerWidth <= 1024
+  const settings = useSettingsState();
+  const { models, selectedModel, setSelectedModel, fetchModels } = useModels(
+    settings.translationUrl
   );
+
+  const {
+    imageList,
+    setImageList,
+    currentImageIndex,
+    setCurrentImageIndex,
+    imageSrc,
+    setImageSrc,
+    handleImportImages,
+    loadImageByIndex,
+    selectImageAt,
+  } = useImageLibrary(setProgress);
+
+  // При смене текущего изображения или обновлении списка — подставляем его items
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1024px)");
-    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    setIsMobile(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+    const cur = imageList[currentImageIndex];
+    if (cur) setDetectedItems(cur.items ?? null);
+  }, [currentImageIndex, imageList]);
 
-  // DnD overlay
-  const [isHtmlDragOver, setIsHtmlDragOver] = useState(false);
-  const dragCounterRef = useRef(0);
-
-  // Backends
-  const [apiBaseUrl, setApiBaseUrl] = useState(
-    () => localStorage.getItem("apiBaseUrl") || "http://localhost:8000"
-  );
-  const [translationUrl, setTranslationUrl] = useState(
-    () => localStorage.getItem("translationUrl") || "http://localhost:1234"
-  );
-
-  // Translation options
-  const [systemPrompt, setSystemPrompt] = useState(
-    () => localStorage.getItem("systemPrompt") || DEFAULT_SYSTEM_PROMPT
-  );
-  const [usePanelDetection, setUsePanelDetection] = useState(
-    () => localStorage.getItem("usePanelDetection") !== "false"
-  );
-  const [streamTranslation, setStreamTranslation] = useState(
-    () => localStorage.getItem("streamTranslation") === "true"
-  );
-  const [enableTwoStepTranslation, setEnableTwoStepTranslation] = useState(
-    () => localStorage.getItem("enableTwoStepTranslation") === "true"
-  );
-  const [deeplxUrl, setDeeplxUrl] = useState(
-    () => localStorage.getItem("deeplxUrl") || "https://dplx.xi-xu.me/translate"
-  );
-  const [deeplxApiKey] = useState(
-    () => localStorage.getItem("deeplxApiKey") || ""
-  );
-  const [deeplTargetLang, setDeeplTargetLang] = useState(
-    () => localStorage.getItem("deeplTargetLang") || "RU"
-  );
-  const [deeplOnly, setDeeplOnly] = useState(
-    () => localStorage.getItem("deeplOnly") === "true"
-  );
-
-  // OCR
-  const [ocrEngine, setOcrEngine] = useState<"manga">(() => "manga");
-
-  const [showCanvasText, setShowCanvasText] = useState(
-    () => localStorage.getItem("showCanvasText") !== "false"
-  );
-
-  // Models
-  const { models, selectedModel, setSelectedModel, fetchModels } =
-    useModels(translationUrl);
-
-  // Persist
-  useEffect(() => localStorage.setItem("apiBaseUrl", apiBaseUrl), [apiBaseUrl]);
-  useEffect(
-    () => localStorage.setItem("translationUrl", translationUrl),
-    [translationUrl]
-  );
-  useEffect(
-    () => localStorage.setItem("systemPrompt", systemPrompt),
-    [systemPrompt]
-  );
-  useEffect(
-    () => localStorage.setItem("usePanelDetection", String(usePanelDetection)),
-    [usePanelDetection]
-  );
-  useEffect(
-    () => localStorage.setItem("streamTranslation", String(streamTranslation)),
-    [streamTranslation]
-  );
-  useEffect(
-    () =>
-      localStorage.setItem(
-        "enableTwoStepTranslation",
-        String(enableTwoStepTranslation)
-      ),
-    [enableTwoStepTranslation]
-  );
-  useEffect(() => localStorage.setItem("deeplxUrl", deeplxUrl), [deeplxUrl]);
-  useEffect(
-    () => localStorage.setItem("deeplTargetLang", deeplTargetLang),
-    [deeplTargetLang]
-  );
-  useEffect(
-    () => localStorage.setItem("deeplOnly", String(deeplOnly)),
-    [deeplOnly]
-  );
-
-  useEffect(
-    () => localStorage.setItem("showCanvasText", String(showCanvasText)),
-    [showCanvasText]
-  );
-
-  // Mutual exclusion: DeepL-only vs Two-step
-  useEffect(() => {
-    if (deeplOnly && enableTwoStepTranslation)
-      setEnableTwoStepTranslation(false);
-  }, [deeplOnly]);
-  useEffect(() => {
-    if (enableTwoStepTranslation && deeplOnly) setDeeplOnly(false);
-  }, [enableTwoStepTranslation]);
-
-  // Import folder
-  useCallback(async () => {
-    try {
-      const images = await invoke<ImageInfo[]>("import_folder");
-      setImageList(images);
-      if (images.length > 0) {
-        setCurrentImageIndex(0);
-        setImageSrc(images[0].dataUrl);
-      }
-    } catch (error) {
-      console.error("Failed to import folder:", error);
-      alert("Failed to import folder. Check console for details.");
-    }
-  }, []);
-
-  // Select image
-  useCallback(
-    (index: number) => {
-      setCurrentImageIndex(index);
-      setImageSrc(imageList[index].dataUrl);
-      setDetectedItems(null);
-      setSelectedBoxId(null);
-    },
-    [imageList]
-  );
-
-  // Upload
-  const handleImageUpload = useCallback((dataUrl: string) => {
-    setImageSrc(dataUrl);
-    setDetectedItems([]);
-    setSelectedBoxId(null);
-    setIsLoading({
-      detect: false,
-      ocr: false,
-      translate: false,
-      models: false,
-    });
-  }, []);
-
-  // HTML5 DnD
-  useEffect(() => {
-    const shouldHandle = (dt: DataTransfer | null) => {
-      if (!dt) return false;
-      const t = Array.from(dt.types || []);
-      return (
-        t.includes("Files") ||
-        t.includes("text/uri-list") ||
-        t.includes("text/html")
-      );
-    };
-
-    const onDragEnter = (e: DragEvent) => {
-      if (!shouldHandle(e.dataTransfer)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current += 1;
-      setIsHtmlDragOver(true);
-      e.dataTransfer && (e.dataTransfer.dropEffect = "copy");
-    };
-    const onDragOver = (e: DragEvent) => {
-      if (!shouldHandle(e.dataTransfer)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer && (e.dataTransfer.dropEffect = "copy");
-    };
-    const onDragLeave = (e: DragEvent) => {
-      if (!shouldHandle(e.dataTransfer)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-      if (dragCounterRef.current === 0) setIsHtmlDragOver(false);
-    };
-
-    const processBlob = (b?: Blob) => {
-      if (!b) return;
-      const r = new FileReader();
-      r.onload = (ev) => {
-        const res = ev.target?.result as string;
-        if (res) handleImageUpload(res);
-      };
-      r.readAsDataURL(b);
-    };
-    const tryFetchAsBlob = async (url: string) => {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(String(res.status));
-      const buf = await res.arrayBuffer();
-      return new Blob([buf]);
-    };
-    const tryFetchViaTauri = async (url: string) => {
-      const b64 = await invoke<string>("fetch_image", { url });
-      const bin = atob(b64);
-      const u8 = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-      return new Blob([u8.buffer]);
-    };
-    const extractUrlFromUriList = (t: string) => {
-      const lines = t.split(/\r?\n/).map((s) => s.trim());
-      for (const l of lines) if (l && !l.startsWith("#")) return l;
-      return null;
-    };
-    const extractImgSrcFromHtml = (html: string) => {
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      const img = doc.querySelector("img");
-      return img?.src || null;
-    };
-
-    const onDrop = async (e: DragEvent) => {
-      if (!shouldHandle(e.dataTransfer)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = 0;
-      setIsHtmlDragOver(false);
-
-      const dt = e.dataTransfer!;
-      if (dt.files?.length) {
-        const f =
-          Array.from(dt.files).find((f) => f.type.startsWith("image/")) ||
-          dt.files[0];
-        processBlob(f);
-        return;
-      }
-      const uriList = dt.getData("text/uri-list");
-      const url = uriList ? extractUrlFromUriList(uriList) : null;
-      if (url) {
-        try {
-          processBlob(await tryFetchAsBlob(url));
-          return;
-        } catch {
-          try {
-            processBlob(await tryFetchViaTauri(url));
-            return;
-          } catch {}
-        }
-      }
-      const html = dt.getData("text/html");
-      const src = html ? extractImgSrcFromHtml(html) : null;
-      if (src) {
-        try {
-          processBlob(await tryFetchAsBlob(src));
-          return;
-        } catch {
-          try {
-            processBlob(await tryFetchViaTauri(src));
-            return;
-          } catch {}
-        }
-      }
-    };
-
-    document.addEventListener("dragenter", onDragEnter, true);
-    document.addEventListener("dragover", onDragOver, true);
-    document.addEventListener("dragleave", onDragLeave, true);
-    document.addEventListener("drop", onDrop, true);
-    return () => {
-      document.removeEventListener("dragenter", onDragEnter, true);
-      document.removeEventListener("dragover", onDragOver, true);
-      document.removeEventListener("dragleave", onDragLeave, true);
-      document.removeEventListener("drop", onDrop, true);
-    };
-  }, [handleImageUpload]);
-
-  // Layout для текста: добавляем layout только если showCanvasText
-  const laidOut = useTextLayout(showCanvasText ? detectedItems : null);
+  const laidOut = useTextLayout(settings.showCanvasText ? detectedItems : null);
   const itemsForCanvas: LaidOutTextItem[] | null = detectedItems
     ? detectedItems.map((i) => {
         const layout = laidOut?.find((x) => x.id === i.id)?.layout;
@@ -355,46 +91,68 @@ export default function App() {
       })
     : null;
 
-  // Hooks
   const { handleDetect } = useDetection({
     imageSrc,
     editMode,
-    apiBaseUrl,
+    apiBaseUrl: settings.apiBaseUrl,
     setDetectedItems,
     setIsLoading,
-    usePanelDetection,
+    usePanelDetection: settings.usePanelDetection,
   });
-
   const { recognizeAllBubbles } = useOcr({
     imageSrc,
     detectedItems,
     editMode,
-    apiBaseUrl,
+    apiBaseUrl: settings.apiBaseUrl,
     setDetectedItems,
     setIsLoading,
-    ocrEngine,
+    ocrEngine: settings.ocrEngine,
     easyOcrLangs: "en",
   });
-
   const { translateAllBubbles } = useTranslation({
     detectedItems,
     editMode,
     selectedModel,
-    translationUrl,
-    systemPrompt,
-    enableTwoStepTranslation,
-    deeplxUrl,
-    deeplxApiKey,
-    streamTranslation,
+    translationUrl: settings.translationUrl,
+    systemPrompt: settings.systemPrompt,
+    enableTwoStepTranslation: settings.enableTwoStepTranslation,
+    deeplxUrl: settings.deeplxUrl,
+    deeplxApiKey: settings.deeplxApiKey,
+    streamTranslation: settings.streamTranslation,
     setDetectedItems,
     setIsLoading,
     onStreamUpdate: setStreamingLogContent,
     onStreamEnd: () => setStreamingLogContent(null),
-    deeplTargetLang,
-    deeplOnly,
+    deeplTargetLang: settings.deeplTargetLang,
+    deeplOnly: settings.deeplOnly,
   });
 
-  // Callbacks
+  const { processCurrentAll, processAllImagesAll } = useProcessAll({
+    apiBaseUrl: settings.apiBaseUrl,
+    usePanelDetection: settings.usePanelDetection,
+    translationUrl: settings.translationUrl,
+    selectedModel,
+    systemPrompt: settings.systemPrompt,
+    deeplOnly: settings.deeplOnly,
+    enableTwoStepTranslation: settings.enableTwoStepTranslation,
+    deeplxUrl: settings.deeplxUrl,
+    deeplxApiKey: settings.deeplxApiKey,
+    deeplTargetLang: settings.deeplTargetLang,
+    setDetectedItems,
+    setImageList,
+    setProgress,
+  });
+
+  const onImageLoaded = useCallback(
+    (dataUrl: string) => {
+      setImageSrc(dataUrl);
+      setDetectedItems([]);
+      setSelectedBoxId(null);
+    },
+    [setImageSrc]
+  );
+  const { isHtmlDragOver } = useDnDImport(onImageLoaded);
+
   const handleUpdateTextFields = useCallback(
     (id: number, fields: Partial<DetectedTextItem>) => {
       setDetectedItems((prev) =>
@@ -405,7 +163,6 @@ export default function App() {
     },
     []
   );
-
   const toggleEditMode = useCallback(() => {
     if (!imageSrc) return;
     setEditMode((prev) => {
@@ -416,7 +173,6 @@ export default function App() {
       return !prev;
     });
   }, [imageSrc]);
-
   const handleAddBubble = useCallback((newBox: BoundingBox) => {
     setDetectedItems((prev) => {
       const arr = prev || [];
@@ -434,8 +190,8 @@ export default function App() {
             fontWeight: "normal",
             fontStyle: "normal",
             textDecoration: "none",
-            color: "#000000",
-            strokeColor: "#FFFFFF",
+            color: "#000",
+            strokeColor: "#FFF",
             strokeWidth: 2,
           },
         },
@@ -443,7 +199,6 @@ export default function App() {
     });
     setAddingBubble(false);
   }, []);
-
   const handleUpdateBubble = useCallback((id: number, newBox: BoundingBox) => {
     setDetectedItems((prev) =>
       prev
@@ -451,23 +206,21 @@ export default function App() {
         : null
     );
   }, []);
-
   const handleDeleteBubble = useCallback(() => {
     if (selectedBoxId === null || !editMode) return;
-    setDetectedItems((prev) => {
-      if (!prev) return null;
-      const next = prev.filter((it) => it.id !== selectedBoxId);
-      // перенумерация подряд
-      return next.map((it, idx) => ({ ...it, id: idx + 1 }));
-    });
+    setDetectedItems((prev) =>
+      prev
+        ? prev
+            .filter((it) => it.id !== selectedBoxId)
+            .map((it, idx) => ({ ...it, id: idx + 1 }))
+        : null
+    );
     setSelectedBoxId(null);
   }, [selectedBoxId, editMode]);
-
   const toggleAddBubble = useCallback(() => {
     if (!editMode || !imageSrc) return;
     setAddingBubble((p) => !p);
   }, [editMode, imageSrc]);
-
   const handleExportImage = useCallback(async () => {
     if (!imageSrc || !laidOut) return;
     const img = new Image();
@@ -478,10 +231,9 @@ export default function App() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(img, 0, 0);
-      for (const it of laidOut) {
+      for (const it of laidOut)
         if (it.translation && it.layout)
           drawPrecalculatedText(ctx, it.box, it.layout);
-      }
       const link = document.createElement("a");
       link.download = `translated-${Date.now()}.png`;
       link.href = canvas.toDataURL("image/png");
@@ -489,11 +241,6 @@ export default function App() {
     };
     img.src = imageSrc;
   }, [imageSrc, laidOut]);
-
-  const closeSettings = useCallback(() => setShowSettingsModal(false), []);
-  const exitFullscreen = useCallback(() => setCanvasFullscreen(false), []);
-  const cancelAddBubble = useCallback(() => setAddingBubble(false), []);
-
   const handleBoxSelect = useCallback(
     (itemOrId: DetectedTextItem | null) => {
       if (isAddingBubble) return;
@@ -504,7 +251,6 @@ export default function App() {
     [isAddingBubble]
   );
 
-  // Hotkeys
   useHotkeys({
     editMode,
     isCanvasFullscreen,
@@ -516,43 +262,59 @@ export default function App() {
     handleDetect,
     recognizeAllBubbles,
     translateAllBubbles,
-    exitFullscreen,
-    cancelAddBubble,
-    closeSettings,
+    exitFullscreen: () => setCanvasFullscreen(false),
+    cancelAddBubble: () => setAddingBubble(false),
+    closeSettings: () => setShowSettingsModal(false),
     onUndo: () => undoRef.current?.(),
   });
+
+  const { ctxMenu, openContextMenu, closeContextMenu, menuItems } =
+    useContextMenu({
+      imageSrc,
+      editMode,
+      isAddingBubble,
+      selectedBoxId,
+      detectedItems,
+      imageList,
+      progress,
+      toggleEditMode,
+      toggleAddBubble,
+      handleDeleteBubble,
+      handleDetect,
+      recognizeAllBubbles,
+      translateAllBubbles,
+      processCurrentAll: () =>
+        processCurrentAll(imageSrc, imageList[currentImageIndex]),
+      processAllImagesAll: () =>
+        processAllImagesAll(imageList, setCurrentImageIndex, setImageSrc),
+      handleExportImage,
+    });
 
   return (
     <div class="app-root">
       <div class="app-container">
         <AppHeader
-          onToggleLeftSidebar={() => setLeftSidebarOpen((p) => !p)}
-          onToggleRightSidebar={() => setRightSidebarOpen((p) => !p)}
+          onImportImages={handleImportImages}
           onShowSettings={() => setShowSettingsModal(true)}
         />
-
+        <TopProgressBar
+          active={progress.active}
+          current={progress.current}
+          total={progress.total}
+          label={progress.label}
+        />
         <main class="app-main">
-          {/* Левая панель */}
-          <div className={`left-sidebar ${isLeftSidebarOpen ? "is-open" : ""}`}>
-            <ImageUploader onImageUpload={handleImageUpload} />
-            <ActionButtons
-              imageSrc={imageSrc}
-              isLoading={isLoading}
-              onDetect={handleDetect}
-              onRecognize={recognizeAllBubbles}
-              onTranslate={translateAllBubbles}
-              onExportImage={handleExportImage}
-              editMode={editMode}
-              onToggleEditMode={toggleEditMode}
-              isAddingBubble={isAddingBubble}
-              onToggleAddBubble={toggleAddBubble}
-              onDeleteBubble={handleDeleteBubble}
-              selectedBubbleId={selectedBoxId}
+          <div className="left-sidebar">
+            <ImageList
+              images={imageList}
+              currentIndex={currentImageIndex}
+              onSelect={selectImageAt}
             />
           </div>
-
-          {/* Центральная область */}
-          <div class="main-workspace">
+          <div
+            class="main-workspace"
+            onContextMenu={(e) => openContextMenu(e as any)}
+          >
             <ImageCanvas
               imageSrc={imageSrc}
               detectedItems={itemsForCanvas}
@@ -562,16 +324,10 @@ export default function App() {
               onBoxSelect={handleBoxSelect}
               onAddBubble={handleAddBubble}
               onUpdateBubble={handleUpdateBubble}
-              onUndoExternal={(fn) => {
-                undoRef.current = fn;
-              }}
+              onUndoExternal={(fn) => (undoRef.current = fn)}
             />
           </div>
-
-          {/* Правая панель */}
-          <div
-            className={`right-sidebar ${isRightSidebarOpen ? "is-open" : ""}`}
-          >
+          <div className="right-sidebar">
             {streamingLogContent !== null && (
               <div
                 class="workspace-panel"
@@ -603,7 +359,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
             <ResultDisplay
               detectedItems={detectedItems}
               selectedBoxId={selectedBoxId}
@@ -614,7 +369,10 @@ export default function App() {
                   if (!prev) return null;
                   const items = [...prev];
                   const from = items.findIndex((i) => i.id === sourceId);
-                  const to = items.findIndex((i) => i.id === targetId);
+                  const to =
+                    targetId === -1
+                      ? items.length - 1
+                      : items.findIndex((i) => i.id === targetId);
                   if (from === -1 || to === -1) return items;
                   const [moved] = items.splice(from, 1);
                   items.splice(to, 0, moved);
@@ -626,23 +384,6 @@ export default function App() {
         </main>
       </div>
 
-      {/* Пелена только на мобильных */}
-      {isMobile && (isLeftSidebarOpen || isRightSidebarOpen) && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            zIndex: 1999,
-          }}
-          onClick={() => {
-            setLeftSidebarOpen(false);
-            setRightSidebarOpen(false);
-          }}
-        />
-      )}
-
-      {/* DnD overlay — не блокирует клики */}
       {isHtmlDragOver && (
         <div
           style={{
@@ -664,12 +405,11 @@ export default function App() {
         </div>
       )}
 
-      {/* Fullscreen (optional) */}
       {isCanvasFullscreen && (
         <div class="fullscreen-canvas-container">
           <button
             class="btn btn-outline fullscreen-exit-btn"
-            onClick={exitFullscreen}
+            onClick={() => setCanvasFullscreen(false)}
             title="Exit Fullscreen (Esc)"
           >
             <FullscreenExitIcon class="icon" /> Exit Fullscreen
@@ -677,24 +417,25 @@ export default function App() {
         </div>
       )}
 
-      {/* Floating window */}
       {showFloatingWindow && selectedBoxId !== null && (
         <FloatingWindow
           position={floatingWindowPosition}
-          settings={floatingWindowSettings}
+          settings={{ showOcr: true, showTranslation: true }}
           detectedItems={detectedItems}
           selectedBoxId={selectedBoxId}
           onPositionUpdate={(x, y) => setFloatingWindowPosition({ x, y })}
-          onSettingsUpdate={(s) => setFloatingWindowSettings(s)}
+          onSettingsUpdate={() => {}}
           onClose={() => setShowFloatingWindow(false)}
           editMode={editMode}
           onUpdateText={handleUpdateTextFields}
         />
       )}
 
-      {/* Settings modal */}
       {showSettingsModal && (
-        <div class="settings-modal-overlay" onClick={closeSettings}>
+        <div
+          class="settings-modal-overlay"
+          onClick={() => setShowSettingsModal(false)}
+        >
           <div
             class="settings-modal-content"
             onClick={(e) => e.stopPropagation()}
@@ -703,7 +444,7 @@ export default function App() {
               <h2>Settings</h2>
               <button
                 class="close-button"
-                onClick={closeSettings}
+                onClick={() => setShowSettingsModal(false)}
                 title="Close (Esc)"
               >
                 ✕
@@ -711,37 +452,47 @@ export default function App() {
             </div>
             <div class="settings-modal-body">
               <Settings
-                apiBaseUrl={apiBaseUrl}
-                setApiBaseUrl={setApiBaseUrl}
-                translationUrl={translationUrl}
-                setTranslationUrl={setTranslationUrl}
+                apiBaseUrl={settings.apiBaseUrl}
+                setApiBaseUrl={settings.setApiBaseUrl}
+                translationUrl={settings.translationUrl}
+                setTranslationUrl={settings.setTranslationUrl}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 models={models}
                 fetchModels={fetchModels}
-                systemPrompt={systemPrompt}
-                setSystemPrompt={setSystemPrompt}
-                usePanelDetection={usePanelDetection}
-                setUsePanelDetection={setUsePanelDetection}
-                streamTranslation={streamTranslation}
-                setStreamTranslation={setStreamTranslation}
-                enableTwoStepTranslation={enableTwoStepTranslation}
-                setEnableTwoStepTranslation={setEnableTwoStepTranslation}
-                deeplxUrl={deeplxUrl}
-                setDeeplxUrl={setDeeplxUrl}
-                ocrEngine={ocrEngine}
-                setOcrEngine={setOcrEngine}
-                showCanvasText={showCanvasText}
-                setShowCanvasText={setShowCanvasText}
-                deeplOnly={deeplOnly}
-                setDeeplOnly={setDeeplOnly}
-                deeplTargetLang={deeplTargetLang}
-                setDeeplTargetLang={setDeeplTargetLang}
+                systemPrompt={settings.systemPrompt}
+                setSystemPrompt={settings.setSystemPrompt}
+                usePanelDetection={settings.usePanelDetection}
+                setUsePanelDetection={settings.setUsePanelDetection}
+                streamTranslation={settings.streamTranslation}
+                setStreamTranslation={settings.setStreamTranslation}
+                enableTwoStepTranslation={settings.enableTwoStepTranslation}
+                setEnableTwoStepTranslation={
+                  settings.setEnableTwoStepTranslation
+                }
+                deeplxUrl={settings.deeplxUrl}
+                setDeeplxUrl={settings.setDeeplxUrl}
+                ocrEngine={settings.ocrEngine}
+                setOcrEngine={settings.setOcrEngine}
+                showCanvasText={settings.showCanvasText}
+                setShowCanvasText={settings.setShowCanvasText}
+                deeplOnly={settings.deeplOnly}
+                setDeeplOnly={settings.setDeeplOnly}
+                deeplTargetLang={settings.deeplTargetLang}
+                setDeeplTargetLang={settings.setDeeplTargetLang}
               />
             </div>
           </div>
         </div>
       )}
+
+      <ContextMenu
+        x={ctxMenu.x}
+        y={ctxMenu.y}
+        visible={ctxMenu.visible}
+        items={menuItems}
+        onClose={closeContextMenu}
+      />
     </div>
   );
 }

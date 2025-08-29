@@ -22,7 +22,7 @@ fn main() {
             commands::read_file_b64,
             
             // Новые команды
-            folder::import_folder,
+            folder::import_images,
             fonts::get_system_fonts,
             project::create_directory_structure,
             project::save_project,

@@ -1,0 +1,50 @@
+/* src/components/ui/ContextMenu.css */
+.context-menu {
+  position: fixed;
+  z-index: 4000;
+  min-width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.context-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text-primary);
+  border-radius: 6px;
+}
+
+.context-item:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.context-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.context-sep {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 6px 4px;
+}
+
+.context-item kbd {
+  background: var(--color-gray-100);
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}

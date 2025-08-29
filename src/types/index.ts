@@ -1,3 +1,4 @@
+// src/types/index.ts
 export interface BoundingBox {
   x1: number;
   y1: number;
@@ -52,6 +53,8 @@ export interface ImageInfo {
   path: string;
   dataUrl: string;
   thumbnail: string;
+  // результаты обработки для страницы (детект/ocr/перевод)
+  items?: DetectedTextItem[] | null;
 }
 
 // Типы для API

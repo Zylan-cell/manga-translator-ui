@@ -67,11 +67,6 @@ export function useOcr({
       );
       const base64Images = croppedImages.map((d) => d.split(",")[1]);
 
-      const langsArr = easyOcrLangs
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
       const data = await invoke<RecognizeBatchResponse>(
         "recognize_images_batch",
         {
