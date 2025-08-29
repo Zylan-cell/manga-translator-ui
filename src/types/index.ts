@@ -30,7 +30,6 @@ export interface LoadingState {
   translate: boolean;
   detect: boolean;
   models: boolean;
-  inpaint?: boolean;
 }
 
 export interface FloatingWindowSettings {
@@ -67,17 +66,12 @@ export interface DeepLXResponse {
 export interface RecognizeBatchResponse {
   results: string[];
 }
-export interface InpaintResponse {
-  image_data: string;
-  mask_data?: string;
-}
 export interface YoloDetectionResult {
   boxes: BoundingBox[];
 }
 
 export interface AppSettings {
-  ocrEngine: "manga" | "easy";
+  ocrEngine: "manga";
   easyOcrLangs: string;
-  ocrAutoRotate: boolean;
   deeplTargetLang: string;
 }

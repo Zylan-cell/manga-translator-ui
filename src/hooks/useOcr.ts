@@ -18,9 +18,8 @@ interface UseOcrArgs {
   apiBaseUrl: string;
   setDetectedItems: SetItems;
   setIsLoading: SetLoading;
-  ocrEngine: "auto" | "manga" | "rapid" | "easy";
+  ocrEngine: "manga";
   easyOcrLangs: string;
-  ocrAutoRotate: boolean;
 }
 
 export function useOcr({
@@ -32,7 +31,6 @@ export function useOcr({
   setIsLoading,
   ocrEngine,
   easyOcrLangs,
-  ocrAutoRotate,
 }: UseOcrArgs) {
   const recognizeAllBubbles = useCallback(async () => {
     if (!imageSrc || !detectedItems || !detectedItems.length || editMode)
@@ -80,8 +78,8 @@ export function useOcr({
           apiUrl: apiBaseUrl,
           imagesData: base64Images,
           engine: ocrEngine,
-          langs: ocrEngine === "easy" ? langsArr : undefined,
-          autoRotate: ocrAutoRotate,
+          langs: undefined, // MangaOCR doesn't use langs parameter
+          autoRotate: false, // Remove auto-rotate feature
         }
       );
 
@@ -108,7 +106,6 @@ export function useOcr({
     setIsLoading,
     ocrEngine,
     easyOcrLangs,
-    ocrAutoRotate,
   ]);
 
   return { recognizeAllBubbles };

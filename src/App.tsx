@@ -8,14 +8,13 @@ import ActionButtons from "./components/ui/ActionButtons";
 import FloatingWindow from "./components/ui/FloatingWindow";
 import Settings from "./components/ui/Settings";
 import ResultDisplay from "./components/ui/ResultDisplay";
-import { FullscreenExitIcon } from "./components/ui/Icons";
+import FullscreenExitIcon from "./assets/icons/fullscreen-exit.svg?react";
 
 import {
   DetectedTextItem,
   LoadingState,
   FloatingWindowSettings,
   BoundingBox,
-  InpaintResponse,
   ImageInfo,
 } from "./types";
 
@@ -51,7 +50,6 @@ export default function App() {
     ocr: false,
     translate: false,
     models: false,
-    inpaint: false,
   });
 
   // UI
@@ -70,12 +68,6 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
   const [isAddingBubble, setAddingBubble] = useState(false);
 
-  // Mask tools
-  const [maskMode, setMaskMode] = useState(false);
-  const [eraseMode, setEraseMode] = useState(false);
-  const [brushSize, setBrushSize] = useState(24);
-  const [takeMaskSnapshotSig, setTakeMaskSnapshotSig] = useState(0);
-  const [clearMaskSig, setClearMaskSig] = useState(0);
   const undoRef = useRef<() => void>(() => {});
 
   // Sidebars & mobile overlay
@@ -131,12 +123,8 @@ export default function App() {
   );
 
   // OCR
-  const [ocrEngine, setOcrEngine] = useState<
-    "auto" | "manga" | "rapid" | "easy"
-  >(() => (localStorage.getItem("ocrEngine") as any) || "auto");
-  const [ocrAutoRotate, setOcrAutoRotate] = useState(
-    () => localStorage.getItem("ocrAutoRotate") === "true"
-  );
+  const [ocrEngine, setOcrEngine] = useState<"manga">(() => "manga");
+
   const [showCanvasText, setShowCanvasText] = useState(
     () => localStorage.getItem("showCanvasText") !== "false"
   );
@@ -180,11 +168,7 @@ export default function App() {
     () => localStorage.setItem("deeplOnly", String(deeplOnly)),
     [deeplOnly]
   );
-  useEffect(() => localStorage.setItem("ocrEngine", ocrEngine), [ocrEngine]);
-  useEffect(
-    () => localStorage.setItem("ocrAutoRotate", String(ocrAutoRotate)),
-    [ocrAutoRotate]
-  );
+
   useEffect(
     () => localStorage.setItem("showCanvasText", String(showCanvasText)),
     [showCanvasText]
@@ -235,10 +219,7 @@ export default function App() {
       ocr: false,
       translate: false,
       models: false,
-      inpaint: false,
     });
-    setMaskMode(false);
-    setClearMaskSig((s) => s + 1);
   }, []);
 
   // HTML5 DnD
@@ -393,7 +374,6 @@ export default function App() {
     setIsLoading,
     ocrEngine,
     easyOcrLangs: "en",
-    ocrAutoRotate,
   });
 
   const { translateAllBubbles } = useTranslation({
@@ -431,7 +411,6 @@ export default function App() {
     setEditMode((prev) => {
       if (prev) {
         setAddingBubble(false);
-        setMaskMode(false);
         setSelectedBoxId(null);
       }
       return !prev;
@@ -488,31 +467,6 @@ export default function App() {
     if (!editMode || !imageSrc) return;
     setAddingBubble((p) => !p);
   }, [editMode, imageSrc]);
-
-  const handleInpaintAuto = useCallback(async () => {
-    if (!imageSrc || !detectedItems || !detectedItems.length) return;
-    try {
-      setIsLoading((p) => ({ ...p, inpaint: true }));
-      const base64Image = imageSrc.split(",")[1];
-      const boxes = detectedItems.map((it) => [
-        Math.round(it.box.x1),
-        Math.round(it.box.y1),
-        Math.round(it.box.x2),
-        Math.round(it.box.y2),
-      ]);
-      const resp = await invoke<InpaintResponse>("inpaint_text_auto", {
-        apiUrl: apiBaseUrl,
-        imageData: base64Image,
-        boxes,
-        dilate: 2,
-      });
-      setImageSrc(`data:image/png;base64,${resp.image_data}`);
-    } catch (e) {
-      console.error("Auto inpaint error:", e);
-    } finally {
-      setIsLoading((p) => ({ ...p, inpaint: false }));
-    }
-  }, [imageSrc, detectedItems, apiBaseUrl]);
 
   const handleExportImage = useCallback(async () => {
     if (!imageSrc || !laidOut) return;
@@ -588,24 +542,12 @@ export default function App() {
               onRecognize={recognizeAllBubbles}
               onTranslate={translateAllBubbles}
               onExportImage={handleExportImage}
-              onInpaintAuto={handleInpaintAuto}
               editMode={editMode}
               onToggleEditMode={toggleEditMode}
               isAddingBubble={isAddingBubble}
               onToggleAddBubble={toggleAddBubble}
               onDeleteBubble={handleDeleteBubble}
               selectedBubbleId={selectedBoxId}
-              maskMode={maskMode}
-              onToggleMaskMode={() => setMaskMode((v) => !v)}
-              brushSize={brushSize}
-              onBrushSizeChange={setBrushSize}
-              eraseMode={eraseMode}
-              onToggleEraseMode={() => setEraseMode((v) => !v)}
-              onApplyInpaint={() => setTakeMaskSnapshotSig((s) => s + 1)}
-              onClearMask={() => {
-                if (confirm("Clear entire mask?"))
-                  setClearMaskSig((s) => s + 1);
-              }}
             />
           </div>
 
@@ -620,29 +562,6 @@ export default function App() {
               onBoxSelect={handleBoxSelect}
               onAddBubble={handleAddBubble}
               onUpdateBubble={handleUpdateBubble}
-              maskMode={maskMode}
-              eraseMode={eraseMode}
-              brushSize={brushSize}
-              takeManualMaskSnapshot={takeMaskSnapshotSig}
-              onMaskSnapshot={async (dataUrl) => {
-                if (!dataUrl || !imageSrc) return;
-                try {
-                  setIsLoading((p) => ({ ...p, inpaint: true }));
-                  const resp = await invoke<InpaintResponse>("inpaint_image", {
-                    apiUrl: apiBaseUrl,
-                    imageData: imageSrc.split(",")[1],
-                    maskData: dataUrl.split(",")[1],
-                  });
-                  setImageSrc(`data:image/png;base64,${resp.image_data}`);
-                  setMaskMode(false);
-                } catch (e) {
-                  console.error("Manual inpaint error:", e);
-                } finally {
-                  setIsLoading((p) => ({ ...p, inpaint: false }));
-                }
-              }}
-              clearMaskSignal={clearMaskSig}
-              onMaskCleared={() => {}}
               onUndoExternal={(fn) => {
                 undoRef.current = fn;
               }}
@@ -753,7 +672,7 @@ export default function App() {
             onClick={exitFullscreen}
             title="Exit Fullscreen (Esc)"
           >
-            <FullscreenExitIcon /> Exit Fullscreen
+            <FullscreenExitIcon class="icon" /> Exit Fullscreen
           </button>
         </div>
       )}
@@ -812,8 +731,6 @@ export default function App() {
                 setDeeplxUrl={setDeeplxUrl}
                 ocrEngine={ocrEngine}
                 setOcrEngine={setOcrEngine}
-                ocrAutoRotate={ocrAutoRotate}
-                setOcrAutoRotate={setOcrAutoRotate}
                 showCanvasText={showCanvasText}
                 setShowCanvasText={setShowCanvasText}
                 deeplOnly={deeplOnly}

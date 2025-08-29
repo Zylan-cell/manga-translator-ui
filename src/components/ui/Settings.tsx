@@ -1,5 +1,45 @@
 import { FunctionalComponent } from "preact";
 
+// Language options with native names
+const LANGUAGE_OPTIONS = [
+  { code: "EN-US", name: "English (American)" },
+  { code: "EN-GB", name: "English (British)" },
+  { code: "AR", name: "العربية" },
+  { code: "BG", name: "Български" },
+  { code: "HU", name: "Magyar" },
+  { code: "VI", name: "Tiếng Việt" },
+  { code: "EL", name: "Ελληνικά" },
+  { code: "DA", name: "Dansk" },
+  { code: "HE", name: "עברית" },
+  { code: "ID", name: "Bahasa Indonesia" },
+  { code: "ES", name: "Español" },
+  { code: "ES-MX", name: "Español (México)" },
+  { code: "IT", name: "Italiano" },
+  { code: "ZH", name: "中文（繁體）" },
+  { code: "ZH-HANS", name: "中文（简体）" },
+  { code: "KO", name: "한국어" },
+  { code: "LV", name: "Latviešu" },
+  { code: "LT", name: "Lietuvių" },
+  { code: "DE", name: "Deutsch" },
+  { code: "NL", name: "Nederlands" },
+  { code: "NB", name: "Norsk (Bokmål)" },
+  { code: "PL", name: "Polski" },
+  { code: "PT", name: "Português" },
+  { code: "PT-BR", name: "Português (Brasil)" },
+  { code: "RO", name: "Română" },
+  { code: "RU", name: "Русский" },
+  { code: "SK", name: "Slovenčina" },
+  { code: "SL", name: "Slovenščina" },
+  { code: "TR", name: "Türkçe" },
+  { code: "UK", name: "Українська" },
+  { code: "FI", name: "Suomi" },
+  { code: "FR", name: "Français" },
+  { code: "CS", name: "Čeština" },
+  { code: "SV", name: "Svenska" },
+  { code: "ET", name: "Eesti" },
+  { code: "JA", name: "日本語" },
+];
+
 interface SettingsProps {
   apiBaseUrl: string;
   setApiBaseUrl: (url: string) => void;
@@ -22,11 +62,8 @@ interface SettingsProps {
   deeplxUrl: string;
   setDeeplxUrl: (url: string) => void;
 
-  ocrEngine: "auto" | "manga" | "rapid" | "easy";
-  setOcrEngine: (v: "auto" | "manga" | "rapid" | "easy") => void;
-  ocrAutoRotate: boolean;
-  setOcrAutoRotate: (v: boolean) => void;
-
+  ocrEngine: "manga";
+  setOcrEngine: (v: "manga") => void;
   showCanvasText: boolean;
   setShowCanvasText: (v: boolean) => void;
 
@@ -83,31 +120,13 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
 
         <div class="settings-field">
           <label>OCR Engine</label>
-          <select
-            class="select"
-            value={p.ocrEngine}
-            onChange={(e) =>
-              p.setOcrEngine(
-                (e.currentTarget as HTMLSelectElement).value as any
-              )
-            }
-          >
-            <option value="auto">Auto (MangaOCR + RapidOCR)</option>
-            <option value="manga">MangaOCR (Japanese)</option>
-            <option value="rapid">RapidOCR (EN only)</option>
-            <option value="easy">EasyOCR (experimental)</option>
-          </select>
+          <div class="input-like-display">MangaOCR (Japanese)</div>
+          <small class="hint">
+            Using MangaOCR for Japanese text recognition.
+          </small>
         </div>
 
-        <div class="settings-row">
-          <label class="toggle">
-            <input
-              type="checkbox"
-              checked={p.ocrAutoRotate}
-              onChange={onCheck(p.setOcrAutoRotate)}
-            />
-            OCR Auto-rotate (try 0°, 90°, 270°)
-          </label>
+        <div class="settings-field">
           <label class="toggle">
             <input
               type="checkbox"
@@ -241,19 +260,24 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
       <section class="settings-section">
         <h3>DeepLx Target Language</h3>
         <div class="settings-field">
-          <label htmlFor="deepl-target-lang">Target language (ISO code)</label>
-          <input
+          <label htmlFor="deepl-target-lang">Target language</label>
+          <select
             id="deepl-target-lang"
-            type="text"
             class="input"
             value={p.deeplTargetLang}
-            onInput={(e) =>
-              p.setDeeplTargetLang(
-                (e.currentTarget as HTMLInputElement).value.toUpperCase()
-              )
+            onChange={(e) =>
+              p.setDeeplTargetLang((e.currentTarget as HTMLSelectElement).value)
             }
-            placeholder="RU"
-          />
+          >
+            {LANGUAGE_OPTIONS.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.name}
+              </option>
+            ))}
+          </select>
+          <small class="hint">
+            Select the target language for translation.
+          </small>
         </div>
       </section>
     </div>

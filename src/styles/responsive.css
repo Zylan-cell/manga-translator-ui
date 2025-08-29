@@ -1,25 +1,24 @@
+/* Показывать кнопку настроек всегда */
+.header-center {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+/* Кнопки панелей видны только на мобильных */
+.mobile-only {
+  display: none;
+}
+
 /* Мобильные стили (<= 1024px) */
 @media (max-width: 1024px) {
-  .header-controls {
+  .mobile-only {
     display: flex;
-    gap: var(--spacing-2);
-  }
-
-  .header-left,
-  .header-right {
-    display: none;
   }
 }
 
 /* Десктопные стили (> 1024px) */
 @media (min-width: 1025px) {
-  .header-controls {
+  .mobile-only {
     display: none;
-  }
-
-  .header-left,
-  .header-right {
-    display: flex;
-    gap: var(--spacing-2);
   }
 }

@@ -16,6 +16,8 @@ src-tauri/src-tauri
 dist/
 dist-ssr
 *.local
+manga-translator-api/
+manga-translator-api
 
 # Editor directories and files
 .vscode/*

@@ -1,5 +1,7 @@
 import { FunctionalComponent } from "preact";
-import { SettingsIcon, MenuIcon, PanelRightIcon } from "./Icons";
+import SettingsIcon from "../../assets/icons/settings.svg?react";
+import MenuIcon from "../../assets/icons/menu.svg?react";
+import PanelRightIcon from "../../assets/icons/panel-right.svg?react";
 
 interface AppHeaderProps {
   onToggleLeftSidebar: () => void;
@@ -16,28 +18,31 @@ const AppHeader: FunctionalComponent<AppHeaderProps> = ({
     <header class="app-header">
       <div class="header-left">
         <button
-          class="btn btn-secondary btn-icon"
+          class="btn btn-secondary btn-icon mobile-only"
           onClick={onToggleLeftSidebar}
           title="Actions"
         >
-          <MenuIcon />
+          <MenuIcon class="icon" />
         </button>
       </div>
 
-      <div class="header-right">
+      <div class="header-center">
         <button
           class="btn btn-secondary btn-icon"
           onClick={onShowSettings}
           title="Settings"
         >
-          <SettingsIcon />
+          <SettingsIcon class="icon" />
         </button>
+      </div>
+
+      <div class="header-right">
         <button
-          class="btn btn-secondary btn-icon"
+          class="btn btn-secondary btn-icon mobile-only"
           onClick={onToggleRightSidebar}
           title="Results"
         >
-          <PanelRightIcon />
+          <PanelRightIcon class="icon" />
         </button>
       </div>
     </header>

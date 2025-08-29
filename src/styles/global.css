@@ -111,3 +111,20 @@ body,
 .text-secondary {
   color: var(--text-secondary);
 }
+
+/* SVG icon baseline */
+.icon {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Ensure consistent icon sizing in header buttons */
+.btn-icon .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}

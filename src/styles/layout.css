@@ -22,12 +22,28 @@
   display: flex;
   gap: var(--spacing-3);
   align-items: center;
+  flex: 0 0 auto;
+}
+
+.header-center {
+  display: flex;
+  gap: var(--spacing-3);
+  align-items: center;
+  justify-content: center;
+  flex: 1;
 }
 
 .header-title {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+}
+
+/* Ensure consistent header icon sizing */
+.app-header .btn-icon .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .app-main {
@@ -68,11 +84,6 @@
   position: relative;
   overflow: hidden;
   background-color: var(--color-gray-100);
-}
-
-/* Hide header controls on desktop by default */
-.header-controls {
-  display: none;
 }
 
 /* Desktop layout */
