@@ -72,19 +72,6 @@
   color: var(--text-primary);
   font-size: var(--font-size-base);
 }
-
-/* Display field that looks like input but is read-only */
-.input-like-display {
-  width: 100%;
-  box-sizing: border-box;
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  background-color: var(--color-gray-50);
-  color: var(--text-secondary);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-}
 .select {
   padding-right: 2rem;
 }
