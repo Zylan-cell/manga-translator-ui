@@ -26,7 +26,9 @@ fn main() {
             fonts::get_system_fonts,
             project::create_directory_structure,
             project::save_project,
-            project::export_images
+            project::export_images,
+            project::export_project,
+            project::import_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

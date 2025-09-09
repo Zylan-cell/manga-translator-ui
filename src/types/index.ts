@@ -4,7 +4,6 @@ export interface BoundingBox {
   y1: number;
   x2: number;
   y2: number;
-  confidence: number;
 }
 
 export interface TextProperties {
@@ -23,6 +22,10 @@ export interface DetectedTextItem {
   box: BoundingBox;
   ocrText: string | null;
   translation: string | null;
+  // Cached intermediate translation (e.g., Japanese -> English for 2-step translation)
+  cachedIntermediateText: string | null;
+  // Language code of the cached intermediate text (e.g., "EN")
+  cachedIntermediateLang: string | null;
   textProperties?: TextProperties;
 }
 
@@ -77,4 +80,27 @@ export interface AppSettings {
   ocrEngine: "manga";
   easyOcrLangs: string;
   deeplTargetLang: string;
+}
+
+// Project export/import types
+export interface ProjectMetadata {
+  version: string;
+}
+
+export interface ProjectImageData {
+  name: string;
+  items: Omit<DetectedTextItem, "id">[];
+}
+
+export interface ProjectSettings {
+  deeplTargetLang: string;
+  ocrEngine: string;
+  // Language of cached intermediate translations
+  cachedIntermediateLang?: string;
+}
+
+export interface ProjectData {
+  metadata: ProjectMetadata;
+  images: ProjectImageData[];
+  settings: ProjectSettings;
 }

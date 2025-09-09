@@ -21,7 +21,8 @@ type Args = {
   translateAllBubbles: () => void;
   processCurrentAll: () => void;
   processAllImagesAll: () => void;
-  handleExportImage: () => void;
+  handleExportProject: () => void;
+  handleImportProject: () => void;
 };
 
 export function useContextMenu(args: Args) {
@@ -36,9 +37,7 @@ export function useContextMenu(args: Args) {
   const hasOcr = !!args.detectedItems?.some(
     (i) => i.ocrText && i.ocrText.trim()
   );
-  const hasTranslations = !!args.detectedItems?.some(
-    (i) => i.translation && i.translation.trim()
-  );
+  // Note: hasTranslations check removed since export image function was removed
 
   const items: MenuItem[] = [
     {
@@ -103,9 +102,15 @@ export function useContextMenu(args: Args) {
     },
     { separator: true as true },
     {
-      label: "Export Image",
-      onClick: args.handleExportImage,
-      disabled: !args.imageSrc || !hasTranslations || disabledBusy,
+      label: "Export Project",
+      onClick: args.handleExportProject,
+      disabled: !args.imageList.length || disabledBusy,
+      separator: false,
+    },
+    {
+      label: "Import Project",
+      onClick: args.handleImportProject,
+      disabled: disabledBusy,
       separator: false,
     },
   ];

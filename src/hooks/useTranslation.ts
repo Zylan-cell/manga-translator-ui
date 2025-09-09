@@ -1,3 +1,4 @@
+// src/hooks/useTranslation.ts
 import { useCallback } from "preact/hooks";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -14,7 +15,6 @@ interface UseTranslationArgs {
   selectedModel: string;
   translationUrl: string;
   systemPrompt: string;
-  deeplOnly: boolean;
   enableTwoStepTranslation: boolean;
   deeplxUrl: string;
   deeplxApiKey: string;
@@ -23,7 +23,11 @@ interface UseTranslationArgs {
   setIsLoading: SetLoading;
   onStreamUpdate: (content: string) => void;
   onStreamEnd: () => void;
-  deeplTargetLang: string; // e.g. "RU"
+  deeplTargetLang: string;
+}
+
+function uuid(): string {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function stripCodeFences(s: string): string {
@@ -126,20 +130,12 @@ async function chatCompletion(
   return resp?.choices?.[0]?.message?.content || "";
 }
 
-function uuid(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return (crypto as any).randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 export function useTranslation({
   detectedItems,
   editMode,
   selectedModel,
   translationUrl,
   systemPrompt,
-  deeplOnly,
   enableTwoStepTranslation,
   deeplxUrl,
   deeplxApiKey,
@@ -157,42 +153,10 @@ export function useTranslation({
     );
     if (!itemsToTranslate.length) return;
 
-    if (deeplOnly) {
-      const texts = itemsToTranslate.map((i) => i.ocrText!);
-      try {
-        const resp = await invoke<DeepLXResponse>("translate_deeplx", {
-          apiUrl: deeplxUrl,
-          apiKey: deeplxApiKey,
-          texts, // передаем массив
-          targetLang: deeplTargetLang || "RU",
-          sourceLang: null, // автоопределение
-        });
-        if (resp.code !== 200 || !resp.data) throw new Error("DeepLx failed");
-        const lines = resp.data.split("\n");
-        const map = new Map<number, string>();
-        itemsToTranslate.forEach((it, idx) => {
-          if (lines[idx]) map.set(it.id, lines[idx]);
-        });
-        setDetectedItems((prev) =>
-          (prev || []).map((item) => ({
-            ...item,
-            translation: map.get(item.id) ?? item.translation ?? null,
-          }))
-        );
-      } catch (e: any) {
-        console.error("DeepL-only translation failed:", e);
-        alert(`DeepL-only translation failed: ${e.message}`);
-      } finally {
-        setIsLoading((p) => ({ ...p, translate: false }));
-      }
-      return; // выходим, LLM не запускаем
-    }
-
     setIsLoading((p) => ({ ...p, translate: true }));
     setDetectedItems((prev) =>
       (prev || []).map((item) => ({ ...item, translation: null }))
     );
-    if (streamTranslation) onStreamUpdate("");
 
     try {
       const numberedJP = itemsToTranslate
@@ -202,62 +166,112 @@ export function useTranslation({
       if (streamTranslation) {
         const streamId = uuid();
         let buffer = "";
+        let finalEnglishPairs: { id: number; translation: string }[] = [];
+        let secondStepTriggered = false;
 
-        listen("llm-stream", async (ev) => {
+        const unlisten = await listen("llm-stream", (ev) => {
           const p = ev.payload as any;
           if (!p || p.id !== streamId) return;
 
           if (p.delta) {
             buffer += String(p.delta);
+            const pairs = parseNumberedLinesToPairs(buffer);
+            if (pairs.length) {
+              finalEnglishPairs = pairs;
+
+              // живое обновление без префиксов
+              setDetectedItems((prev) =>
+                (prev || []).map((item) => {
+                  const hit = pairs.find((x) => x.id === item.id);
+                  if (!hit) return item;
+                  return {
+                    ...item,
+                    translation: hit.translation,
+                    cachedIntermediateText: enableTwoStepTranslation
+                      ? hit.translation
+                      : item.cachedIntermediateText,
+                    cachedIntermediateLang: enableTwoStepTranslation
+                      ? "EN"
+                      : item.cachedIntermediateLang,
+                  };
+                })
+              );
+            }
+
             onStreamUpdate(buffer);
           }
 
           if (p.done) {
-            // ЛОГИ: финальный английский
-            console.log(
-              "=== English (LLM stream) ===\n" +
-                buffer +
-                "\n============================"
-            );
+            unlisten();
 
-            const finalPairsEN = parseNumberedLinesToPairs(buffer);
-            if (!finalPairsEN.length)
-              throw new Error("Could not parse final streamed response.");
-
-            let finalResults = new Map<number, string>();
-
-            if (enableTwoStepTranslation) {
-              onStreamUpdate(buffer + "\n\nTranslating via DeepLx...");
-              const textsEN = finalPairsEN.map((p: any) => p.translation);
-              const resp2 = await invoke<DeepLXResponse>("translate_deeplx", {
-                apiUrl: deeplxUrl,
-                apiKey: deeplxApiKey,
-                texts: textsEN,
-                targetLang: deeplTargetLang || "RU",
-                sourceLang: "EN",
-              });
-              if (resp2.code !== 200 || !resp2.data)
-                throw new Error(`Step 2 (EN->${deeplTargetLang}) failed`);
-              const ruLines = resp2.data.split("\n");
-              finalPairsEN.forEach((p: any, idx: number) => {
-                if (ruLines[idx]) finalResults.set(p.id, ruLines[idx]);
-              });
+            if (enableTwoStepTranslation && finalEnglishPairs.length) {
+              if (!secondStepTriggered) {
+                secondStepTriggered = true;
+                setTimeout(() => {
+                  performSecondStepTranslation(finalEnglishPairs);
+                }, 300);
+              }
             } else {
-              finalPairsEN.forEach((p: any) =>
-                finalResults.set(p.id, p.translation)
+              setIsLoading((pr) => ({ ...pr, translate: false }));
+              onStreamEnd();
+            }
+          }
+        });
+
+        const performSecondStepTranslation = async (
+          englishPairs: { id: number; translation: string }[]
+        ) => {
+          try {
+            const textsEN = englishPairs.map((p) => p.translation);
+
+            const resp2 = await invoke<DeepLXResponse>("translate_deeplx", {
+              apiUrl: deeplxUrl,
+              apiKey: deeplxApiKey,
+              texts: textsEN,
+              targetLang: deeplTargetLang || "RU",
+              sourceLang: "EN",
+            });
+
+            if (resp2.code !== 200 || !resp2.data) {
+              throw new Error(
+                `DeepLx failed in post-streaming mode: code ${resp2.code}, data: ${resp2.data}`
               );
             }
 
-            setDetectedItems((prev) =>
-              (prev || []).map((item) => ({
-                ...item,
-                translation: finalResults.get(item.id) ?? null,
-              }))
+            const ruLines = resp2.data.split("\n");
+            const finalResults = new Map<number, string>();
+            englishPairs.forEach((p, idx) =>
+              finalResults.set(p.id, ruLines[idx])
             );
+
+            setDetectedItems((prev) =>
+              (prev || []).map((item) => {
+                const englishText = englishPairs.find(
+                  (p) => p.id === item.id
+                )?.translation;
+                return {
+                  ...item,
+                  translation: finalResults.get(item.id) ?? null,
+                  cachedIntermediateText:
+                    englishText || item.cachedIntermediateText,
+                  cachedIntermediateLang: englishText
+                    ? "EN"
+                    : item.cachedIntermediateLang,
+                };
+              })
+            );
+          } catch (e: any) {
+            console.error(
+              "Second step translation failed in post-streaming mode:",
+              e
+            );
+            alert(`Second step translation failed: ${e.message}`);
+            // оставляем английский
+          } finally {
+            setIsLoading((pr) => ({ ...pr, translate: false }));
             onStreamEnd();
-            setIsLoading((p) => ({ ...p, translate: false }));
           }
-        });
+        };
 
         const apiUrl = `${translationUrl.replace(
           /\/$/,
@@ -266,7 +280,7 @@ export function useTranslation({
         await invoke("translate_text_stream", {
           apiUrl,
           payload: {
-            model: selectedModel,
+            model: selectedModel || "local-model",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: numberedJP },
@@ -278,21 +292,15 @@ export function useTranslation({
           streamId,
         });
 
-        // отписка сделается автоматически когда p.done
         return;
       }
 
-      // Non-stream
+      // non-stream
       const rawEN = await chatCompletion(
         translationUrl,
         selectedModel,
         systemPrompt,
         numberedJP
-      );
-
-      // ЛОГИ: английский ответ
-      console.log(
-        "=== English (LLM) ===\n" + rawEN + "\n====================="
       );
 
       const pairsEN = parseNumberedLinesToPairs(rawEN);
@@ -308,19 +316,39 @@ export function useTranslation({
           targetLang: deeplTargetLang || "RU",
           sourceLang: "EN",
         });
-        if (resp2.code !== 200 || !resp2.data) throw new Error("DeepLx failed");
+        if (resp2.code !== 200 || !resp2.data)
+          throw new Error(
+            `DeepLx failed: code ${resp2.code}, data: ${resp2.data}`
+          );
         const ruLines = resp2.data.split("\n");
         pairsEN.forEach((p, idx) => finalResults.set(p.id, ruLines[idx]));
+
+        setDetectedItems((prev) =>
+          (prev || []).map((item) => {
+            const englishText = pairsEN.find(
+              (p) => p.id === item.id
+            )?.translation;
+            return {
+              ...item,
+              translation: finalResults.get(item.id) ?? null,
+              cachedIntermediateText:
+                englishText || item.cachedIntermediateText,
+              cachedIntermediateLang: englishText
+                ? "EN"
+                : item.cachedIntermediateLang,
+            };
+          })
+        );
       } else {
         pairsEN.forEach((p) => finalResults.set(p.id, p.translation));
-      }
 
-      setDetectedItems((prev) =>
-        (prev || []).map((item) => ({
-          ...item,
-          translation: finalResults.get(item.id) ?? null,
-        }))
-      );
+        setDetectedItems((prev) =>
+          (prev || []).map((item) => ({
+            ...item,
+            translation: finalResults.get(item.id) ?? null,
+          }))
+        );
+      }
     } catch (e: any) {
       console.error("Translation failed:", e);
       alert(`Translation failed: ${e.message}`);
@@ -334,7 +362,6 @@ export function useTranslation({
     selectedModel,
     translationUrl,
     systemPrompt,
-    deeplOnly,
     enableTwoStepTranslation,
     deeplxUrl,
     deeplxApiKey,
@@ -346,5 +373,66 @@ export function useTranslation({
     deeplTargetLang,
   ]);
 
-  return { translateAllBubbles };
+  const retranslateFromCache = useCallback(
+    async (newTargetLang: string) => {
+      if (!detectedItems || !detectedItems.length || editMode) return;
+
+      const itemsWithCache = detectedItems.filter(
+        (i) => i.cachedIntermediateText && i.cachedIntermediateLang
+      );
+      if (!itemsWithCache.length) return;
+
+      setIsLoading((p) => ({ ...p, translate: true }));
+
+      try {
+        const cachedTexts = itemsWithCache.map(
+          (i) => i.cachedIntermediateText!
+        );
+        const resp = await invoke<DeepLXResponse>("translate_deeplx", {
+          apiUrl: deeplxUrl,
+          apiKey: deeplxApiKey,
+          texts: cachedTexts,
+          targetLang: newTargetLang,
+          sourceLang: itemsWithCache[0].cachedIntermediateLang!,
+        });
+
+        if (resp.code !== 200 || !resp.data)
+          throw new Error(
+            `DeepLx retranslation failed: code ${resp.code}, data: ${resp.data}`
+          );
+
+        const translatedLines = resp.data.split("\n");
+        const translationMap = new Map<number, string>();
+
+        itemsWithCache.forEach((item, idx) => {
+          if (translatedLines[idx]) {
+            translationMap.set(item.id, translatedLines[idx]);
+          }
+        });
+
+        setDetectedItems((prev) =>
+          (prev || []).map((item) => ({
+            ...item,
+            translation: translationMap.has(item.id)
+              ? translationMap.get(item.id)!
+              : item.translation,
+          }))
+        );
+      } catch (e: any) {
+        console.error("Retranslation from cache failed:", e);
+      } finally {
+        setIsLoading((p) => ({ ...p, translate: false }));
+      }
+    },
+    [
+      detectedItems,
+      editMode,
+      deeplxUrl,
+      deeplxApiKey,
+      setDetectedItems,
+      setIsLoading,
+    ]
+  );
+
+  return { translateAllBubbles, retranslateFromCache };
 }

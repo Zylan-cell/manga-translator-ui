@@ -162,7 +162,6 @@ export function useCanvas({
           y1: ip.y,
           x2: ip.x,
           y2: ip.y,
-          confidence: 1,
         };
         stateRef.current.currentNewBox = nb;
         setDrawingBox(nb);
@@ -248,7 +247,6 @@ export function useCanvas({
             y1: Math.min(s.y, ip.y),
             x2: Math.max(s.x, ip.x),
             y2: Math.max(s.y, ip.y),
-            confidence: 1,
           };
           stateRef.current.currentNewBox = nb;
           setDrawingBox(nb);
@@ -269,7 +267,6 @@ export function useCanvas({
             y1: initialBox.y1 + offsetY,
             x2: initialBox.x2 + offsetX,
             y2: initialBox.y2 + offsetY,
-            confidence: initialBox.confidence,
           };
           onUpdateBubble(id, nb);
           break;
@@ -295,7 +292,6 @@ export function useCanvas({
             y1: Math.min(y1, y2),
             x2: Math.max(x1, x2),
             y2: Math.max(y1, y2),
-            confidence: item.box.confidence,
           };
           onUpdateBubble(id, nb);
           break;

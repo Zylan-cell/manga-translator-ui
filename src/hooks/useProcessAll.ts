@@ -11,7 +11,7 @@ import {
 } from "../types";
 import { ProgressState } from "../types/ui";
 import { sortBubblesByPanels } from "../utils/sorting";
-import { chatCompletion, parseNumberedLinesToPairs } from "../utils/llm";
+import { parseNumberedLinesToPairs } from "../utils/llm";
 import { runInPool } from "../utils/pool";
 
 type SetState<T> = (value: T | ((prev: T) => T)) => void;
@@ -22,7 +22,6 @@ type Args = {
   translationUrl: string;
   selectedModel: string;
   systemPrompt: string;
-  deeplOnly: boolean;
   enableTwoStepTranslation: boolean;
   deeplxUrl: string;
   deeplxApiKey: string;
@@ -31,6 +30,9 @@ type Args = {
   setDetectedItems: SetState<DetectedTextItem[] | null>;
   setImageList: SetState<ImageInfo[]>;
   setProgress: SetState<ProgressState>;
+
+  // новый флаг — чтобы не сбивать прогресс-бар при переключении изображений
+  setBatchActive: SetState<boolean>;
 };
 
 function uuid(): string {
@@ -67,6 +69,12 @@ function extToMime(path: string): string {
 
 async function ensureDataUrl(item: ImageInfo): Promise<string> {
   if (item.dataUrl) return item.dataUrl;
+
+  if (item.path.startsWith("temp://")) {
+    if (item.dataUrl) return item.dataUrl;
+    throw new Error("No data URL available for temp image");
+  }
+
   const b64 = await invoke<string>("read_file_b64", { path: item.path });
   const mime = extToMime(item.path);
   return `data:${mime};base64,${b64}`;
@@ -78,7 +86,6 @@ export function useProcessAll({
   translationUrl,
   selectedModel,
   systemPrompt,
-  deeplOnly,
   enableTwoStepTranslation,
   deeplxUrl,
   deeplxApiKey,
@@ -86,6 +93,7 @@ export function useProcessAll({
   setDetectedItems,
   setImageList,
   setProgress,
+  setBatchActive,
 }: Args) {
   async function detectForImage(dataUrl: string): Promise<BoundingBox[]> {
     const base64Image = dataUrl.split(",")[1];
@@ -144,55 +152,6 @@ export function useProcessAll({
     return data.results || [];
   }
 
-  async function translatePairs(pairs: { id: number; jp: string }[]) {
-    if (!pairs.length) return new Map<number, string>();
-
-    if (deeplOnly) {
-      const texts = pairs.map((p) => p.jp);
-      const resp = await invoke<any>("translate_deeplx", {
-        apiUrl: deeplxUrl,
-        apiKey: deeplxApiKey,
-        texts,
-        targetLang: deeplTargetLang || "RU",
-        sourceLang: null,
-      });
-      if (resp.code !== 200 || !resp.data) throw new Error("DeepLx failed");
-      const lines = String(resp.data).split("\n");
-      const m = new Map<number, string>();
-      pairs.forEach((p, idx) => lines[idx] && m.set(p.id, lines[idx]));
-      return m;
-    }
-
-    const numbered = pairs.map((p) => `${p.id}. ${p.jp}`).join("\n");
-    const rawEN = await chatCompletion(
-      translationUrl,
-      selectedModel,
-      systemPrompt,
-      numbered
-    );
-    const pairsEN = parseNumberedLinesToPairs(rawEN);
-    if (!pairsEN.length) throw new Error("Could not parse LLM response.");
-
-    if (!enableTwoStepTranslation)
-      return new Map(pairsEN.map((p) => [p.id, p.translation]));
-
-    const textsEN = pairsEN.map((p) => p.translation);
-    const resp2 = await invoke<any>("translate_deeplx", {
-      apiUrl: deeplxUrl,
-      apiKey: deeplxApiKey,
-      texts: textsEN,
-      targetLang: deeplTargetLang || "RU",
-      sourceLang: "EN",
-    });
-    if (resp2.code !== 200 || !resp2.data)
-      throw new Error("DeepLx failed at EN->target");
-
-    const ruLines = String(resp2.data).split("\n");
-    const m = new Map<number, string>();
-    pairsEN.forEach((p, idx) => ruLines[idx] && m.set(p.id, ruLines[idx]));
-    return m;
-  }
-
   async function startTranslateStreamForImage(
     path: string,
     ocrTexts: string[]
@@ -206,6 +165,8 @@ export function useProcessAll({
 
     const streamId = uuid();
     let buffer = "";
+    let finalEnglishPairs: { id: number; translation: string }[] = [];
+    let secondStepTriggered = false;
 
     const unlisten = await listen("llm-stream", (ev) => {
       const p = ev.payload as any;
@@ -215,6 +176,8 @@ export function useProcessAll({
         buffer += String(p.delta);
         const pairs = parseNumberedLinesToPairs(buffer);
         if (pairs.length) {
+          finalEnglishPairs = pairs;
+
           setImageList((prev) =>
             prev.map((img) =>
               img.path !== path
@@ -223,7 +186,19 @@ export function useProcessAll({
                     ...img,
                     items: (img.items || []).map((it) => {
                       const hit = pairs.find((x) => x.id === it.id);
-                      return hit ? { ...it, translation: hit.translation } : it;
+                      if (hit) {
+                        return {
+                          ...it,
+                          translation: hit.translation, // без префиксов
+                          cachedIntermediateText: enableTwoStepTranslation
+                            ? hit.translation
+                            : it.cachedIntermediateText,
+                          cachedIntermediateLang: enableTwoStepTranslation
+                            ? "EN"
+                            : it.cachedIntermediateLang,
+                        };
+                      }
+                      return it;
                     }),
                   }
             )
@@ -233,9 +208,77 @@ export function useProcessAll({
 
       if (p.done) {
         unlisten();
+
+        if (enableTwoStepTranslation && finalEnglishPairs.length) {
+          if (!secondStepTriggered) {
+            secondStepTriggered = true;
+            setTimeout(() => {
+              performSecondStepTranslationForImage(path, finalEnglishPairs);
+            }, 300);
+          }
+        }
+
         setProgress((pr) => ({ ...pr }));
       }
     });
+
+    const performSecondStepTranslationForImage = async (
+      imagePath: string,
+      englishPairs: { id: number; translation: string }[]
+    ) => {
+      try {
+        const textsEN = englishPairs.map((p) => p.translation);
+
+        const resp2 = await invoke<any>("translate_deeplx", {
+          apiUrl: deeplxUrl,
+          apiKey: deeplxApiKey,
+          texts: textsEN,
+          targetLang: deeplTargetLang || "RU",
+          sourceLang: "EN",
+        });
+
+        if (resp2.code !== 200 || !resp2.data) {
+          throw new Error(
+            `DeepLx failed in post-streaming mode: code ${resp2.code}, data: ${resp2.data}`
+          );
+        }
+
+        const ruLines = resp2.data.split("\n");
+        const finalResults = new Map<number, string>();
+        englishPairs.forEach((p, idx) => finalResults.set(p.id, ruLines[idx]));
+
+        setImageList((prev) =>
+          prev.map((img) =>
+            img.path !== imagePath
+              ? img
+              : {
+                  ...img,
+                  items: (img.items || []).map((it) => {
+                    const englishText = englishPairs.find(
+                      (p) => p.id === it.id
+                    )?.translation;
+                    return {
+                      ...it,
+                      translation: finalResults.get(it.id) ?? null,
+                      cachedIntermediateText:
+                        englishText || it.cachedIntermediateText,
+                      cachedIntermediateLang: englishText
+                        ? "EN"
+                        : it.cachedIntermediateLang,
+                    };
+                  }),
+                }
+          )
+        );
+      } catch (e: any) {
+        console.error(
+          "Second step translation failed in post-streaming mode:",
+          e
+        );
+        alert(`Second step translation failed: ${e.message}`);
+        // Оставляем английский при ошибке
+      }
+    };
 
     const apiUrl = `${translationUrl.replace(/\/$/, "")}/v1/chat/completions`;
     await invoke("translate_text_stream", {
@@ -259,6 +302,7 @@ export function useProcessAll({
     current?: ImageInfo
   ) {
     if (!imageSrc || !current) return;
+    setBatchActive(true);
     try {
       setProgress({ active: true, current: 0, total: 3, label: "Detecting" });
 
@@ -268,6 +312,8 @@ export function useProcessAll({
         box,
         ocrText: null,
         translation: null,
+        cachedIntermediateText: null,
+        cachedIntermediateLang: null,
       }));
       setDetectedItems(items);
       setImageList((prev) =>
@@ -301,20 +347,19 @@ export function useProcessAll({
         () => setProgress({ active: false, current: 0, total: 0, label: "" }),
         300
       );
+      setBatchActive(false);
     }
   }
 
-  async function processAllImagesAll(
-    imageList: ImageInfo[],
-    setCurrentImageIndex: (i: number) => void,
-    setImageSrc: (s: string | null) => void
-  ) {
+  async function processAllImagesAll(imageList: ImageInfo[]) {
     if (!imageList.length) return;
+    setBatchActive(true);
+
     const total = imageList.length * 3;
     let done = 0;
     setProgress({ active: true, current: 0, total, label: "Detecting" });
 
-    const CONC = 2;
+    const CONC = 1; // последовательная обработка
 
     const results = await runInPool(imageList, CONC, async (img) => {
       const dataUrl = await ensureDataUrl(img);
@@ -325,6 +370,8 @@ export function useProcessAll({
         box: b,
         ocrText: null,
         translation: null,
+        cachedIntermediateText: null,
+        cachedIntermediateLang: null,
       }));
 
       setImageList((prev) =>
@@ -367,19 +414,13 @@ export function useProcessAll({
       });
     });
 
-    // Показать первую страницу с результатами
-    const first = imageList[0];
-    if (first) {
-      const dataUrl = await ensureDataUrl(first);
-      setCurrentImageIndex(0);
-      setImageSrc(dataUrl);
-      setDetectedItems(first.items ?? null);
-    }
+    // Не переключаем текущую страницу автоматически
 
     setTimeout(
       () => setProgress({ active: false, current: 0, total: 0, label: "" }),
       500
     );
+    setBatchActive(false);
   }
 
   return { processCurrentAll, processAllImagesAll };

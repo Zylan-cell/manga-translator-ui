@@ -29,21 +29,22 @@ export function useSettingsState() {
     () => localStorage.getItem("enableTwoStepTranslation") === "true"
   );
   const [deeplxUrl, setDeeplxUrl] = useState(
-    () => localStorage.getItem("deeplxUrl") || "https://dplx.xi-xu.me/translate"
+    () =>
+      localStorage.getItem("deeplxUrl") || "https://deeplx.vercel.app/translate"
   );
-  const [deeplxApiKey] = useState(
-    () => localStorage.getItem("deeplxApiKey") || ""
-  );
+  const [deeplxApiKey] = useState(() => "");
   const [deeplTargetLang, setDeeplTargetLang] = useState(
     () => localStorage.getItem("deeplTargetLang") || "RU"
-  );
-  const [deeplOnly, setDeeplOnly] = useState(
-    () => localStorage.getItem("deeplOnly") === "true"
   );
   const [ocrEngine, setOcrEngine] = useState<"manga">(() => "manga");
   const [showCanvasText, setShowCanvasText] = useState(
     () => localStorage.getItem("showCanvasText") !== "false"
   );
+
+  // Cleanup old localStorage values
+  useEffect(() => {
+    localStorage.removeItem("deeplOnly");
+  }, []);
 
   // Persist
   useEffect(() => localStorage.setItem("apiBaseUrl", apiBaseUrl), [apiBaseUrl]);
@@ -77,22 +78,11 @@ export function useSettingsState() {
     [deeplTargetLang]
   );
   useEffect(
-    () => localStorage.setItem("deeplOnly", String(deeplOnly)),
-    [deeplOnly]
-  );
-  useEffect(
     () => localStorage.setItem("showCanvasText", String(showCanvasText)),
     [showCanvasText]
   );
 
-  // Взаимоисключающие режимы
-  useEffect(() => {
-    if (deeplOnly && enableTwoStepTranslation)
-      setEnableTwoStepTranslation(false);
-  }, [deeplOnly]);
-  useEffect(() => {
-    if (enableTwoStepTranslation && deeplOnly) setDeeplOnly(false);
-  }, [enableTwoStepTranslation]);
+  // Взаимоисключающие режимы убраны
 
   return {
     apiBaseUrl,
@@ -112,8 +102,6 @@ export function useSettingsState() {
     deeplxApiKey,
     deeplTargetLang,
     setDeeplTargetLang,
-    deeplOnly,
-    setDeeplOnly,
     ocrEngine,
     setOcrEngine,
     showCanvasText,

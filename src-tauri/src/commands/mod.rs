@@ -176,6 +176,18 @@ pub async fn translate_deeplx(
 ) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let text_payload = texts.join("\n");
+    
+    println!("\n--- DeepLX Translation Request ---");
+    println!("API URL: {}", api_url);
+    println!("Target Lang: {}", target_lang);
+    println!("Source Lang: {:?}", source_lang);
+    println!("Text payload (first 200 chars): {}", 
+        if text_payload.len() > 200 { 
+            format!("{}...", &text_payload[..200])
+        } else {
+            text_payload.clone()
+        }
+    );
 
     let mut payload = serde_json::json!({
         "text": text_payload,
@@ -183,17 +195,89 @@ pub async fn translate_deeplx(
     });
     if let Some(lang) = source_lang {
         payload["source_lang"] = serde_json::json!(lang);
+    } else {
+        payload["source_lang"] = serde_json::json!("auto");
     }
 
     let mut builder = client.post(&api_url).json(&payload);
-    if let Some(key) = api_key {
+    if let Some(key) = &api_key {
         if !key.is_empty() {
             builder = builder.bearer_auth(key);
+            println!("Using API key: {}***", &key[..std::cmp::min(4, key.len())]);
         }
     }
 
-    let response = builder.send().await.map_err(|e| e.to_string())?;
-    handle_response(response).await
+    let response = builder.send().await.map_err(|e| {
+        println!("DeepLX Request failed: {}", e);
+        e.to_string()
+    })?;
+    
+    let status = response.status();
+    println!("DeepLX Response status: {}", status);
+    
+    if status.is_success() {
+        let response_text = response.text().await.map_err(|e| {
+            println!("Failed to read DeepLX response text: {}", e);
+            e.to_string()
+        })?;
+        
+        println!("DeepLX Response body: {}", response_text);
+        
+        // Try to parse as JSON first
+        match serde_json::from_str::<Value>(&response_text) {
+            Ok(json) => {
+                // Check if it's already in the expected format
+                if json.get("code").is_some() && json.get("data").is_some() {
+                    println!("DeepLX returned expected format");
+                    return Ok(json);
+                }
+                
+                // If it's just the translation text or different format, wrap it
+                if let Some(text) = json.as_str() {
+                    println!("DeepLX returned plain text, wrapping");
+                    return Ok(serde_json::json!({
+                        "code": 200,
+                        "data": text
+                    }));
+                }
+                
+                // Try to extract text from various possible formats
+                if let Some(text) = json.get("data").and_then(|v| v.as_str()) {
+                    return Ok(serde_json::json!({
+                        "code": 200,
+                        "data": text
+                    }));
+                }
+                
+                if let Some(text) = json.get("text").and_then(|v| v.as_str()) {
+                    return Ok(serde_json::json!({
+                        "code": 200,
+                        "data": text
+                    }));
+                }
+                
+                // If none of the above, treat whole response as translation
+                println!("DeepLX returned unknown JSON format, treating as translation");
+                return Ok(serde_json::json!({
+                    "code": 200,
+                    "data": response_text
+                }));
+            },
+            Err(_) => {
+                // If it's not JSON, treat as plain text translation
+                println!("DeepLX returned non-JSON response, treating as plain text");
+                return Ok(serde_json::json!({
+                    "code": 200,
+                    "data": response_text
+                }));
+            }
+        }
+    } else {
+        let error_body = response.text().await.unwrap_or_default();
+        let error_msg = format!("DeepLX API Error: Status {}, Body: {}", status, error_body);
+        println!("{}", error_msg);
+        Err(error_msg)
+    }
 }
 
 #[tauri::command]

@@ -32,7 +32,10 @@ function extToMime(path: string): string {
   }
 }
 
-export function useImageLibrary(setProgress: (p: ProgressState) => void) {
+export function useImageLibrary(
+  setProgress: (p: ProgressState) => void,
+  suppressProgress: boolean = false
+) {
   const [imageList, setImageList] = useState<ImageInfo[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -66,12 +69,14 @@ export function useImageLibrary(setProgress: (p: ProgressState) => void) {
         return;
       }
 
-      setProgress({
-        active: true,
-        current: 0,
-        total: 1,
-        label: "Loading image...",
-      });
+      if (!suppressProgress) {
+        setProgress({
+          active: true,
+          current: 0,
+          total: 1,
+          label: "Loading image...",
+        });
+      }
       try {
         const b64 = await invoke<string>("read_file_b64", { path: item.path });
         const mime = extToMime(item.path);
@@ -86,10 +91,12 @@ export function useImageLibrary(setProgress: (p: ProgressState) => void) {
         setCurrentImageIndex(index);
         setImageSrc(dataUrl);
       } finally {
-        setProgress({ active: false, current: 0, total: 0, label: "" });
+        if (!suppressProgress) {
+          setProgress({ active: false, current: 0, total: 0, label: "" });
+        }
       }
     },
-    [imageList, setProgress]
+    [imageList, setProgress, suppressProgress]
   );
 
   const selectImageAt = useCallback(

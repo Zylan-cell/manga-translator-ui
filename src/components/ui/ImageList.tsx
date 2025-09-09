@@ -3,11 +3,14 @@ import { FunctionalComponent } from "preact";
 import { useState } from "preact/hooks";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { ImageInfo } from "../../types";
+import ContextMenu, { MenuItem } from "./ContextMenu";
 
 interface ImageListProps {
   images: ImageInfo[];
   currentIndex: number;
   onSelect: (index: number) => void;
+  onRemoveAt: (index: number) => void;
+  onClearAll: () => void;
 }
 
 function extToMime(path: string): string {
@@ -42,9 +45,16 @@ const ImageList: FunctionalComponent<ImageListProps> = ({
   images,
   currentIndex,
   onSelect,
+  onRemoveAt,
+  onClearAll,
 }) => {
-  // path => dataUrl (fallback для превью, если convertFileSrc не сработал)
   const [fallbackSrc, setFallbackSrc] = useState<Record<string, string>>({});
+  const [ctx, setCtx] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    items: MenuItem[];
+  }>({ visible: false, x: 0, y: 0, items: [] });
 
   const getThumbSrc = (img: ImageInfo) =>
     fallbackSrc[img.path] ||
@@ -63,14 +73,35 @@ const ImageList: FunctionalComponent<ImageListProps> = ({
     }
   };
 
+  const openMenu = (e: MouseEvent, items: MenuItem[]) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtx({ visible: true, x: e.clientX, y: e.clientY, items });
+  };
+  const closeMenu = () => setCtx((p) => ({ ...p, visible: false }));
+
   return (
-    <div className="image-sidebar">
+    <div
+      className="image-sidebar"
+      onContextMenu={(e) =>
+        openMenu(e as unknown as MouseEvent, [
+          { label: "Clear All Images", onClick: onClearAll },
+        ])
+      }
+    >
       <div className="image-list">
         {images.map((img, idx) => (
           <div
             key={img.path + idx}
             className={`image-item ${idx === currentIndex ? "active" : ""}`}
             onClick={() => onSelect(idx)}
+            onContextMenu={(e) =>
+              openMenu(e as unknown as MouseEvent, [
+                { label: "Remove This Image", onClick: () => onRemoveAt(idx) },
+                { separator: true },
+                { label: "Clear All Images", onClick: onClearAll },
+              ])
+            }
             title={img.name}
           >
             <img
@@ -85,6 +116,14 @@ const ImageList: FunctionalComponent<ImageListProps> = ({
           </div>
         ))}
       </div>
+
+      <ContextMenu
+        x={ctx.x}
+        y={ctx.y}
+        visible={ctx.visible}
+        items={ctx.items}
+        onClose={closeMenu}
+      />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 // src/App.tsx
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { invoke } from "@tauri-apps/api/core";
 
 import AppHeader from "./components/ui/AppHeader";
 import ImageCanvas from "./components/ui/ImageCanvas";
@@ -25,7 +26,6 @@ import { useDnDImport } from "./hooks/useDnDImport";
 import { useProcessAll } from "./hooks/useProcessAll";
 import { useContextMenu } from "./hooks/useContextMenu";
 import { ProgressState } from "./types/ui";
-import { drawPrecalculatedText } from "./components/canvas/draw";
 
 export default function App() {
   const [detectedItems, setDetectedItems] = useState<DetectedTextItem[] | null>(
@@ -37,9 +37,6 @@ export default function App() {
     x: 100,
     y: 100,
   });
-  const [streamingLogContent, setStreamingLogContent] = useState<string | null>(
-    null
-  );
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isCanvasFullscreen, setCanvasFullscreen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -57,6 +54,7 @@ export default function App() {
     label: "",
   });
   const undoRef = useRef<() => void>(() => {});
+  const [batchActive, setBatchActive] = useState(false);
 
   const settings = useSettingsState();
   const { models, selectedModel, setSelectedModel, fetchModels } = useModels(
@@ -73,7 +71,7 @@ export default function App() {
     handleImportImages,
     loadImageByIndex,
     selectImageAt,
-  } = useImageLibrary(setProgress);
+  } = useImageLibrary(setProgress, batchActive);
 
   // При смене текущего изображения или обновлении списка — подставляем его items
   useEffect(() => {
@@ -109,7 +107,7 @@ export default function App() {
     ocrEngine: settings.ocrEngine,
     easyOcrLangs: "en",
   });
-  const { translateAllBubbles } = useTranslation({
+  const { translateAllBubbles, retranslateFromCache } = useTranslation({
     detectedItems,
     editMode,
     selectedModel,
@@ -121,11 +119,19 @@ export default function App() {
     streamTranslation: settings.streamTranslation,
     setDetectedItems,
     setIsLoading,
-    onStreamUpdate: setStreamingLogContent,
-    onStreamEnd: () => setStreamingLogContent(null),
+    onStreamUpdate: () => {}, // лог стрима не показываем
+    onStreamEnd: () => {},
     deeplTargetLang: settings.deeplTargetLang,
-    deeplOnly: settings.deeplOnly,
   });
+
+  // Авто-ретрансляция из кэша только при смене целевого языка
+  useEffect(() => {
+    if (!detectedItems) return;
+    if (detectedItems.some((item) => item.cachedIntermediateText)) {
+      retranslateFromCache(settings.deeplTargetLang);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.deeplTargetLang]);
 
   const { processCurrentAll, processAllImagesAll } = useProcessAll({
     apiBaseUrl: settings.apiBaseUrl,
@@ -133,7 +139,6 @@ export default function App() {
     translationUrl: settings.translationUrl,
     selectedModel,
     systemPrompt: settings.systemPrompt,
-    deeplOnly: settings.deeplOnly,
     enableTwoStepTranslation: settings.enableTwoStepTranslation,
     deeplxUrl: settings.deeplxUrl,
     deeplxApiKey: settings.deeplxApiKey,
@@ -141,15 +146,38 @@ export default function App() {
     setDetectedItems,
     setImageList,
     setProgress,
+    setBatchActive,
   });
 
   const onImageLoaded = useCallback(
     (dataUrl: string) => {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const imageName = `dropped-image-${timestamp}.png`;
+
+      const newImageInfo = {
+        name: imageName,
+        path: `temp://${imageName}`,
+        dataUrl: dataUrl,
+        thumbnail: dataUrl,
+        items: [] as DetectedTextItem[],
+      };
+
+      setImageList((prev) => {
+        const newList = [...prev, newImageInfo];
+        const newIndex = newList.length - 1;
+
+        setTimeout(() => {
+          setCurrentImageIndex(newIndex);
+        }, 0);
+
+        return newList;
+      });
+
       setImageSrc(dataUrl);
       setDetectedItems([]);
       setSelectedBoxId(null);
     },
-    [setImageSrc]
+    [setImageSrc, setImageList, setCurrentImageIndex]
   );
   const { isHtmlDragOver } = useDnDImport(onImageLoaded);
 
@@ -163,6 +191,7 @@ export default function App() {
     },
     []
   );
+
   const toggleEditMode = useCallback(() => {
     if (!imageSrc) return;
     setEditMode((prev) => {
@@ -173,6 +202,7 @@ export default function App() {
       return !prev;
     });
   }, [imageSrc]);
+
   const handleAddBubble = useCallback((newBox: BoundingBox) => {
     setDetectedItems((prev) => {
       const arr = prev || [];
@@ -184,6 +214,8 @@ export default function App() {
           box: newBox,
           ocrText: null,
           translation: null,
+          cachedIntermediateText: null,
+          cachedIntermediateLang: null,
           textProperties: {
             fontFamily: "Arial",
             fontSize: 16,
@@ -199,6 +231,7 @@ export default function App() {
     });
     setAddingBubble(false);
   }, []);
+
   const handleUpdateBubble = useCallback((id: number, newBox: BoundingBox) => {
     setDetectedItems((prev) =>
       prev
@@ -206,6 +239,7 @@ export default function App() {
         : null
     );
   }, []);
+
   const handleDeleteBubble = useCallback(() => {
     if (selectedBoxId === null || !editMode) return;
     setDetectedItems((prev) =>
@@ -217,30 +251,133 @@ export default function App() {
     );
     setSelectedBoxId(null);
   }, [selectedBoxId, editMode]);
+
   const toggleAddBubble = useCallback(() => {
     if (!editMode || !imageSrc) return;
     setAddingBubble((p) => !p);
   }, [editMode, imageSrc]);
-  const handleExportImage = useCallback(async () => {
-    if (!imageSrc || !laidOut) return;
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0);
-      for (const it of laidOut)
-        if (it.translation && it.layout)
-          drawPrecalculatedText(ctx, it.box, it.layout);
-      const link = document.createElement("a");
-      link.download = `translated-${Date.now()}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    };
-    img.src = imageSrc;
-  }, [imageSrc, laidOut]);
+
+  const handleExportProject = useCallback(async () => {
+    if (!imageList.length) {
+      alert("No images to export");
+      return;
+    }
+
+    try {
+      const projectData = {
+        metadata: {
+          version: "1",
+        },
+        images: imageList.map((img) => ({
+          name: img.name,
+          items: (img.items || []).map((item) => ({
+            box: {
+              x1: item.box.x1,
+              y1: item.box.y1,
+              x2: item.box.x2,
+              y2: item.box.y2,
+            },
+            ocrText: item.ocrText,
+            translation: item.translation,
+            cachedIntermediateText: item.cachedIntermediateText || null,
+            cachedIntermediateLang: item.cachedIntermediateLang || null,
+          })),
+        })),
+        settings: {
+          deeplTargetLang: settings.deeplTargetLang,
+          ocrEngine: settings.ocrEngine,
+          cachedIntermediateLang: settings.enableTwoStepTranslation
+            ? "EN"
+            : null,
+        },
+      };
+
+      // Prepare image data including base64 for temp:// paths
+      const imageData = imageList.map((img) => {
+        return {
+          path: img.path,
+          dataUrl: img.dataUrl, // Always include dataUrl for all images
+          name: img.name,
+        };
+      });
+
+      await invoke("export_project", {
+        projectData,
+        imageData,
+      });
+
+      alert("Project exported successfully!");
+    } catch (error) {
+      console.error("Export failed:", error);
+      alert(`Export failed: ${error}`);
+    }
+  }, [imageList, settings]);
+
+  const handleImportProject = useCallback(async () => {
+    try {
+      const projectData = await invoke("import_project");
+      if (projectData) {
+        const data = projectData as any;
+
+        const images = data.images || [];
+        const projectSettings = data.settings || {};
+
+        const processedImages = images.map((img: any) => ({
+          name: img.name,
+          path: img.path || `imported/${img.name}`,
+          dataUrl: img.dataUrl,
+          thumbnail: img.thumbnail || img.dataUrl,
+          items: (img.items || []).map((item: any, itemIndex: number) => ({
+            id: itemIndex + 1, // Reassign sequential IDs
+            box: item.box,
+            ocrText: item.ocrText,
+            translation: item.translation,
+            cachedIntermediateText: item.cachedIntermediateText || null,
+            cachedIntermediateLang: item.cachedIntermediateLang || null,
+            textProperties: item.textProperties || {
+              fontFamily: "Arial",
+              fontSize: 16,
+              fontWeight: "normal",
+              fontStyle: "normal",
+              textDecoration: "none",
+              color: "#000",
+              strokeColor: "#FFF",
+              strokeWidth: 2,
+            },
+          })),
+        }));
+
+        setImageList(processedImages);
+        if (processedImages.length > 0) {
+          setCurrentImageIndex(0);
+          setImageSrc(processedImages[0].dataUrl);
+          setDetectedItems(processedImages[0].items || []);
+        }
+
+        if (projectSettings.deeplTargetLang) {
+          settings.setDeeplTargetLang(projectSettings.deeplTargetLang);
+        }
+        if (
+          projectSettings.cachedIntermediateLang &&
+          projectSettings.cachedIntermediateLang === "EN"
+        ) {
+          settings.setEnableTwoStepTranslation(true);
+        }
+
+        alert("Project imported successfully!");
+      }
+    } catch (error) {
+      console.error("Import failed:", error);
+      alert(`Import failed: ${error}`);
+    }
+  }, [
+    setImageList,
+    setCurrentImageIndex,
+    setImageSrc,
+    setDetectedItems,
+    settings,
+  ]);
+
   const handleBoxSelect = useCallback(
     (itemOrId: DetectedTextItem | null) => {
       if (isAddingBubble) return;
@@ -251,6 +388,7 @@ export default function App() {
     [isAddingBubble]
   );
 
+  // Контекстное меню рабочего поля
   useHotkeys({
     editMode,
     isCanvasFullscreen,
@@ -285,10 +423,52 @@ export default function App() {
       translateAllBubbles,
       processCurrentAll: () =>
         processCurrentAll(imageSrc, imageList[currentImageIndex]),
-      processAllImagesAll: () =>
-        processAllImagesAll(imageList, setCurrentImageIndex, setImageSrc),
-      handleExportImage,
+      processAllImagesAll: () => processAllImagesAll(imageList),
+      handleExportProject,
+      handleImportProject,
     });
+
+  // Удаление одного изображения и очистка списка
+  const handleRemoveImageAt = useCallback(
+    (idx: number) => {
+      setImageList((prev) => {
+        if (idx < 0 || idx >= prev.length) return prev;
+        const next = [...prev];
+        next.splice(idx, 1);
+
+        if (prev.length === 1) {
+          setCurrentImageIndex(0);
+          setImageSrc(null);
+          setDetectedItems(null);
+          return next;
+        }
+
+        if (idx === currentImageIndex) {
+          const newIndex = Math.min(idx, next.length - 1);
+          setCurrentImageIndex(newIndex);
+          setTimeout(() => loadImageByIndex(newIndex), 0);
+        } else if (idx < currentImageIndex) {
+          setCurrentImageIndex((i) => Math.max(0, i - 1));
+        }
+        return next;
+      });
+    },
+    [
+      currentImageIndex,
+      loadImageByIndex,
+      setImageList,
+      setCurrentImageIndex,
+      setImageSrc,
+      setDetectedItems,
+    ]
+  );
+
+  const handleClearAllImages = useCallback(() => {
+    setImageList([]);
+    setCurrentImageIndex(0);
+    setImageSrc(null);
+    setDetectedItems(null);
+  }, [setImageList, setCurrentImageIndex, setImageSrc, setDetectedItems]);
 
   return (
     <div class="app-root">
@@ -296,6 +476,8 @@ export default function App() {
         <AppHeader
           onImportImages={handleImportImages}
           onShowSettings={() => setShowSettingsModal(true)}
+          onExportProject={handleExportProject}
+          onImportProject={handleImportProject}
         />
         <TopProgressBar
           active={progress.active}
@@ -309,8 +491,11 @@ export default function App() {
               images={imageList}
               currentIndex={currentImageIndex}
               onSelect={selectImageAt}
+              onRemoveAt={handleRemoveImageAt}
+              onClearAll={handleClearAllImages}
             />
           </div>
+
           <div
             class="main-workspace"
             onContextMenu={(e) => openContextMenu(e as any)}
@@ -327,38 +512,8 @@ export default function App() {
               onUndoExternal={(fn) => (undoRef.current = fn)}
             />
           </div>
+
           <div className="right-sidebar">
-            {streamingLogContent !== null && (
-              <div
-                class="workspace-panel"
-                style={{ flex: "0 1 40%", marginBottom: "var(--spacing-4)" }}
-              >
-                <div class="workspace-panel-header">
-                  <h2>⚡️ Translation Stream Log</h2>
-                </div>
-                <div
-                  class="workspace-panel-content"
-                  style={{
-                    backgroundColor: "#f9fafb",
-                    padding: "var(--spacing-3)",
-                    overflow: "auto",
-                  }}
-                >
-                  <pre
-                    style={{
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      margin: 0,
-                      fontSize: "var(--font-size-sm)",
-                      color: "#374151",
-                      fontFamily: "var(--font-family-mono)",
-                    }}
-                  >
-                    {streamingLogContent || "Waiting for stream..."}
-                  </pre>
-                </div>
-              </div>
-            )}
             <ResultDisplay
               detectedItems={detectedItems}
               selectedBoxId={selectedBoxId}
@@ -431,6 +586,14 @@ export default function App() {
         />
       )}
 
+      <ContextMenu
+        x={ctxMenu.x}
+        y={ctxMenu.y}
+        visible={ctxMenu.visible}
+        items={menuItems}
+        onClose={closeContextMenu}
+      />
+
       {showSettingsModal && (
         <div
           class="settings-modal-overlay"
@@ -476,8 +639,6 @@ export default function App() {
                 setOcrEngine={settings.setOcrEngine}
                 showCanvasText={settings.showCanvasText}
                 setShowCanvasText={settings.setShowCanvasText}
-                deeplOnly={settings.deeplOnly}
-                setDeeplOnly={settings.setDeeplOnly}
                 deeplTargetLang={settings.deeplTargetLang}
                 setDeeplTargetLang={settings.setDeeplTargetLang}
               />
@@ -485,14 +646,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      <ContextMenu
-        x={ctxMenu.x}
-        y={ctxMenu.y}
-        visible={ctxMenu.visible}
-        items={menuItems}
-        onClose={closeContextMenu}
-      />
     </div>
   );
 }

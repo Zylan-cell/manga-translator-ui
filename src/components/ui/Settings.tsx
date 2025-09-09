@@ -1,43 +1,37 @@
 import { FunctionalComponent } from "preact";
 
-// Language options with native names
+// Language options with native names - DeepL supported languages
 const LANGUAGE_OPTIONS = [
-  { code: "EN-US", name: "English (American)" },
-  { code: "EN-GB", name: "English (British)" },
   { code: "AR", name: "العربية" },
   { code: "BG", name: "Български" },
-  { code: "HU", name: "Magyar" },
-  { code: "VI", name: "Tiếng Việt" },
-  { code: "EL", name: "Ελληνικά" },
+  { code: "CS", name: "Čeština" },
   { code: "DA", name: "Dansk" },
-  { code: "HE", name: "עברית" },
-  { code: "ID", name: "Bahasa Indonesia" },
-  { code: "ES", name: "Español" },
-  { code: "ES-MX", name: "Español (México)" },
-  { code: "IT", name: "Italiano" },
-  { code: "ZH", name: "中文（繁體）" },
-  { code: "ZH-HANS", name: "中文（简体）" },
-  { code: "KO", name: "한국어" },
-  { code: "LV", name: "Latviešu" },
-  { code: "LT", name: "Lietuvių" },
   { code: "DE", name: "Deutsch" },
-  { code: "NL", name: "Nederlands" },
+  { code: "EL", name: "Ελληνικά" },
+  { code: "EN", name: "English" },
+  { code: "ES", name: "Español" },
+  { code: "ET", name: "Eesti" },
+  { code: "FI", name: "Suomi" },
+  { code: "FR", name: "Français" },
+  { code: "HU", name: "Magyar" },
+  { code: "ID", name: "Bahasa Indonesia" },
+  { code: "IT", name: "Italiano" },
+  { code: "JA", name: "日本語" },
+  { code: "KO", name: "한국어" },
+  { code: "LT", name: "Lietuvių" },
+  { code: "LV", name: "Latviešu" },
   { code: "NB", name: "Norsk (Bokmål)" },
+  { code: "NL", name: "Nederlands" },
   { code: "PL", name: "Polski" },
   { code: "PT", name: "Português" },
-  { code: "PT-BR", name: "Português (Brasil)" },
   { code: "RO", name: "Română" },
   { code: "RU", name: "Русский" },
   { code: "SK", name: "Slovenčina" },
   { code: "SL", name: "Slovenščina" },
+  { code: "SV", name: "Svenska" },
   { code: "TR", name: "Türkçe" },
   { code: "UK", name: "Українська" },
-  { code: "FI", name: "Suomi" },
-  { code: "FR", name: "Français" },
-  { code: "CS", name: "Čeština" },
-  { code: "SV", name: "Svenska" },
-  { code: "ET", name: "Eesti" },
-  { code: "JA", name: "日本語" },
+  { code: "ZH", name: "中文" },
 ];
 
 interface SettingsProps {
@@ -67,8 +61,6 @@ interface SettingsProps {
   showCanvasText: boolean;
   setShowCanvasText: (v: boolean) => void;
 
-  deeplOnly: boolean;
-  setDeeplOnly: (v: boolean) => void;
   deeplTargetLang: string;
   setDeeplTargetLang: (v: string) => void;
 }
@@ -205,27 +197,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
         </div>
       </section>
       <section class="settings-section">
-        <h3>DeepLx Mode</h3>
-
-        <div class="settings-field">
-          <label class="toggle">
-            <input
-              type="checkbox"
-              checked={p.deeplOnly}
-              onChange={(e) => {
-                const v = (e.currentTarget as HTMLInputElement).checked;
-                p.setDeeplOnly(v);
-                if (v) p.setEnableTwoStepTranslation(false);
-              }}
-            />
-            Use DeepL only (skip LLM step)
-          </label>
-          <small class="hint">
-            Translate OCR text directly via DeepLx (source language auto).
-          </small>
-        </div>
-      </section>
-      <section class="settings-section">
         <h3>2-Step Translation (JP → EN → DeepLx)</h3>
 
         <div class="settings-field">
@@ -236,9 +207,7 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
               onChange={(e) => {
                 const v = (e.currentTarget as HTMLInputElement).checked;
                 p.setEnableTwoStepTranslation(v);
-                if (v) p.setDeeplOnly(false);
               }}
-              disabled={p.deeplOnly}
             />
             Enable 2-Step Translation
           </label>
@@ -253,7 +222,7 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
             value={p.deeplxUrl}
             onInput={onTextInput(p.setDeeplxUrl)}
             placeholder="https://your-deeplx-url/translate"
-            disabled={!p.enableTwoStepTranslation || p.deeplOnly}
+            disabled={!p.enableTwoStepTranslation}
           />
         </div>
       </section>

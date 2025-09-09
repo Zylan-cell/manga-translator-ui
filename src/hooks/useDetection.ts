@@ -68,6 +68,8 @@ export function useDetection({
           box,
           ocrText: null,
           translation: null,
+          cachedIntermediateText: null,
+          cachedIntermediateLang: null,
         })
       );
 
