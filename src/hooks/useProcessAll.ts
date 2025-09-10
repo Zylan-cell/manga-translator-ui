@@ -8,6 +8,7 @@ import {
   RecognizeBatchResponse,
   YoloDetectionResult,
   ImageInfo,
+  DEFAULT_TEXT_PROPERTIES,
 } from "../types";
 import { ProgressState } from "../types/ui";
 import { sortBubblesByPanels } from "../utils/sorting";
@@ -314,6 +315,7 @@ export function useProcessAll({
         translation: null,
         cachedIntermediateText: null,
         cachedIntermediateLang: null,
+        textProperties: DEFAULT_TEXT_PROPERTIES,
       }));
       setDetectedItems(items);
       setImageList((prev) =>
@@ -365,13 +367,14 @@ export function useProcessAll({
       const dataUrl = await ensureDataUrl(img);
 
       const boxes = await detectForImage(dataUrl);
-      const items: DetectedTextItem[] = boxes.map((b, i) => ({
+      const items: DetectedTextItem[] = boxes.map((box, i) => ({
         id: i + 1,
-        box: b,
+        box,
         ocrText: null,
         translation: null,
         cachedIntermediateText: null,
         cachedIntermediateLang: null,
+        textProperties: DEFAULT_TEXT_PROPERTIES,
       }));
 
       setImageList((prev) =>

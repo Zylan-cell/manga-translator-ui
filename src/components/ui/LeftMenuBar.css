@@ -1,0 +1,98 @@
+.left-menu-bar {
+  display: flex;
+  background-color: var(--bg-header);
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  padding: 0;
+  position: relative;
+  z-index: 1000;
+  user-select: none;
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.menu-item {
+  position: relative;
+}
+
+.menu-button {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  border-radius: 0;
+  min-width: 60px;
+  text-align: left;
+}
+
+.menu-button:hover {
+  background-color: var(--bg-hover);
+}
+
+.menu-button.active {
+  background-color: var(--bg-selected);
+  color: var(--color-primary);
+}
+
+.menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-md);
+  min-width: 180px;
+  z-index: 1001;
+  padding: 4px 0;
+}
+
+.menu-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+}
+
+.menu-dropdown-item:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.menu-dropdown-item:disabled {
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+.menu-shortcut {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-left: 16px;
+}
+
+.menu-separator {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 4px 0;
+}
+
+.menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  background: transparent;
+}

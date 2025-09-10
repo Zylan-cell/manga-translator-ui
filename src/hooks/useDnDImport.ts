@@ -43,7 +43,7 @@ export function useDnDImport(onImageLoaded: (dataUrl: string) => void) {
       e.preventDefault();
       e.stopPropagation();
       dragCounterRef.current = 0;
-      setIsHtmlDragOver(false);
+      setIsHtmlDragOver(false); // Убедимся, что состояние сбрасывается
       const dt = e.dataTransfer!;
       if (dt.files?.length) {
         const f =
@@ -76,6 +76,9 @@ export function useDnDImport(onImageLoaded: (dataUrl: string) => void) {
       document.removeEventListener("dragleave", onDragLeave, true);
       document.removeEventListener("drop", onDrop, true);
       window.removeEventListener("paste", onPaste);
+      // Сбрасываем состояние при размонтировании
+      dragCounterRef.current = 0;
+      setIsHtmlDragOver(false);
     };
   }, [onImageLoaded]);
 

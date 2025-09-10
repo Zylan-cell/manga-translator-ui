@@ -6,58 +6,74 @@ import {
   PanelDetectionResult,
   YoloDetectionResult,
   BoundingBox,
+  DEFAULT_TEXT_PROPERTIES,
 } from "../types";
 import { sortBubblesByPanels } from "../utils/sorting";
 
+type SetItemsUpdater = (
+  updater: (prev: DetectedTextItem[] | null) => DetectedTextItem[] | null
+) => void;
 type SetLoading = (updater: (prev: LoadingState) => LoadingState) => void;
-type SetItems = (items: DetectedTextItem[] | null) => void;
 
 interface UseDetectionArgs {
   imageSrc: string | null;
-  editMode: boolean;
   apiBaseUrl: string;
-  setDetectedItems: SetItems;
+  setDetectedItems: SetItemsUpdater;
   setIsLoading: SetLoading;
   usePanelDetection: boolean;
+  detectionModel: string;
 }
 
 export function useDetection({
   imageSrc,
-  editMode,
   apiBaseUrl,
   setDetectedItems,
   setIsLoading,
   usePanelDetection,
+  detectionModel,
 }: UseDetectionArgs) {
   const handleDetect = useCallback(async () => {
-    if (!imageSrc || editMode) return;
+    if (!imageSrc) return;
+
     try {
       setIsLoading((p) => ({ ...p, detect: true }));
       const base64Image = imageSrc.split(",")[1];
 
+      // ИЗМЕНЕНИЕ 6: Формируем единый payload
+      const detectionPayload = {
+        image_data: base64Image,
+        detection_model: detectionModel,
+      };
+
       let finalSortedBubbles: BoundingBox[] = [];
 
       if (usePanelDetection) {
-        console.log("Detecting with Panel Detection ENABLED.");
+        console.log(
+          `Detecting with Panel Detection ENABLED and model '${detectionModel}'.`
+        );
         const [bubbleResult, panelResult] = await Promise.all([
+          // Передаем payload целиком
           invoke<YoloDetectionResult>("detect_text_areas", {
             apiUrl: apiBaseUrl,
-            imageData: base64Image,
+            payload: detectionPayload,
           }),
           invoke<PanelDetectionResult>("detect_panels", {
             apiUrl: apiBaseUrl,
             imageData: base64Image,
           }),
         ]);
-
-        const bubbles = bubbleResult.boxes;
-        const sortedPanels = panelResult.panels;
-        finalSortedBubbles = sortBubblesByPanels(bubbles, sortedPanels);
+        finalSortedBubbles = sortBubblesByPanels(
+          bubbleResult.boxes,
+          panelResult.panels
+        );
       } else {
-        console.log("Detecting with Panel Detection DISABLED.");
+        console.log(
+          `Detecting with Panel Detection DISABLED and model '${detectionModel}'.`
+        );
+        // Передаем payload целиком
         const bubbleResult = await invoke<YoloDetectionResult>(
           "detect_text_areas",
-          { apiUrl: apiBaseUrl, imageData: base64Image }
+          { apiUrl: apiBaseUrl, payload: detectionPayload }
         );
         finalSortedBubbles = sortBubblesByPanels(bubbleResult.boxes, []);
       }
@@ -70,10 +86,11 @@ export function useDetection({
           translation: null,
           cachedIntermediateText: null,
           cachedIntermediateLang: null,
+          textProperties: DEFAULT_TEXT_PROPERTIES,
         })
       );
 
-      setDetectedItems(items);
+      setDetectedItems(() => items);
     } catch (e) {
       console.error("Detect error:", e);
       alert("Detection failed. Check API server and console for details.");
@@ -82,9 +99,9 @@ export function useDetection({
     }
   }, [
     imageSrc,
-    editMode,
     apiBaseUrl,
     usePanelDetection,
+    detectionModel,
     setDetectedItems,
     setIsLoading,
   ]);

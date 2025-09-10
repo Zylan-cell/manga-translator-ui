@@ -2,46 +2,134 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { invoke } from "@tauri-apps/api/core";
 
-import AppHeader from "./components/ui/AppHeader";
+import LeftMenuBar from "./components/ui/LeftMenuBar";
+import CombinedRightPanel from "./components/ui/CombinedRightPanel";
+import BottomToolbar from "./components/ui/BottomToolbar";
 import ImageCanvas from "./components/ui/ImageCanvas";
-import FloatingWindow from "./components/ui/FloatingWindow";
 import Settings from "./components/ui/Settings";
-import ResultDisplay from "./components/ui/ResultDisplay";
-import FullscreenExitIcon from "./assets/icons/fullscreen-exit.svg?react";
 import ImageList from "./components/ui/ImageList";
 import ContextMenu from "./components/ui/ContextMenu";
 import TopProgressBar from "./components/ui/TopProgressBar";
 
-import { DetectedTextItem, LoadingState, BoundingBox } from "./types";
+import {
+  DetectedTextItem,
+  LoadingState,
+  BoundingBox,
+  DEFAULT_TEXT_PROPERTIES,
+} from "./types";
 import { useDetection } from "./hooks/useDetection";
 import { useOcr } from "./hooks/useOcr";
 import { useTranslation } from "./hooks/useTranslation";
 import { useHotkeys } from "./hooks/useHotkeys";
 import { useModels } from "./hooks/useModels";
-import { useTextLayout, LaidOutTextItem } from "./hooks/useTextLayout";
+import { useTextLayout } from "./hooks/useTextLayout";
 
 import { useSettingsState } from "./hooks/useSettingsState";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import { useDnDImport } from "./hooks/useDnDImport";
-import { useProcessAll } from "./hooks/useProcessAll";
 import { useContextMenu } from "./hooks/useContextMenu";
+import { useInpainting } from "./hooks/useInpainting";
 import { ProgressState } from "./types/ui";
+import { DEFAULT_BRUSH_SIZE } from "./components/canvas/constants";
+
+// Отрисовать финальное изображение (инпейнт уже в dataUrl) + текст с учётом настроек
+async function renderFinalImage(
+  baseDataUrl: string,
+  items: DetectedTextItem[] | null
+): Promise<string> {
+  if (!baseDataUrl) return "";
+  const img = await new Promise<HTMLImageElement>((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("Load image error"));
+    im.src = baseDataUrl;
+  });
+  const W = img.naturalWidth || img.width;
+  const H = img.naturalHeight || img.height;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(img, 0, 0);
+
+  if (!items?.length) return c.toDataURL("image/png");
+
+  for (const it of items) {
+    if (!it.translation) continue;
+    const tp = it.textProperties || DEFAULT_TEXT_PROPERTIES;
+
+    // Подготовка шрифта
+    const padding = 4;
+    const fontSize = tp.fontSize;
+    const lineHeight = Math.ceil(fontSize * 1.2);
+    ctx.font = `${tp.fontStyle} ${tp.fontWeight} ${fontSize}px "${tp.fontFamily}", sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "center";
+    ctx.fillStyle = tp.color;
+    ctx.strokeStyle = tp.strokeColor;
+    ctx.lineWidth = tp.strokeWidth;
+
+    // Перенос строк по ширине бокса
+    const maxW = Math.max(8, it.box.x2 - it.box.x1 - padding * 2);
+    const words = it.translation.split(/\s+/);
+    const lines: string[] = [];
+    let line = words[0] || "";
+    for (let i = 1; i < words.length; i++) {
+      const test = line + " " + words[i];
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line);
+        line = words[i];
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+
+    // Центрирование по вертикали
+    const maxH = Math.max(8, it.box.y2 - it.box.y1 - padding * 2);
+    const totalH = lines.length * lineHeight;
+    const startY = it.box.y1 + padding + Math.max(0, (maxH - totalH) / 2);
+    const centerX = it.box.x1 + padding + maxW / 2;
+
+    // Рисуем строки + underline
+    for (let i = 0; i < lines.length; i++) {
+      const y = startY + i * lineHeight;
+      if (tp.strokeWidth > 0) ctx.strokeText(lines[i], centerX, y);
+      ctx.fillText(lines[i], centerX, y);
+
+      if (tp.textDecoration === "underline") {
+        const m = ctx.measureText(lines[i]);
+        const underY = y + fontSize + Math.max(1, tp.strokeWidth / 2);
+        const half = m.width / 2;
+        ctx.save();
+        ctx.lineWidth = Math.max(1, tp.strokeWidth);
+        ctx.strokeStyle = tp.color;
+        ctx.beginPath();
+        ctx.moveTo(centerX - half, underY);
+        ctx.lineTo(centerX + half, underY);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  return c.toDataURL("image/png");
+}
 
 export default function App() {
   const [detectedItems, setDetectedItems] = useState<DetectedTextItem[] | null>(
     null
   );
   const [selectedBoxId, setSelectedBoxId] = useState<number | null>(null);
-  const [showFloatingWindow, setShowFloatingWindow] = useState(false);
-  const [floatingWindowPosition, setFloatingWindowPosition] = useState({
-    x: 100,
-    y: 100,
-  });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [isCanvasFullscreen, setCanvasFullscreen] = useState(false);
-  const [editMode, setEditMode] = useState(false);
+  const editMode = true;
   const [isAddingBubble, setAddingBubble] = useState(false);
-  const [, setIsLoading] = useState<LoadingState>({
+
+  const [maskMode, setMaskMode] = useState(false);
+  const [brushSize, setBrushSize] = useState(DEFAULT_BRUSH_SIZE);
+  const [maskSnapshot, setMaskSnapshot] = useState(0);
+  const [clearMask, setClearMask] = useState(0);
+  const [isLoadingState, setIsLoading] = useState<LoadingState>({
     detect: false,
     ocr: false,
     translate: false,
@@ -54,7 +142,7 @@ export default function App() {
     label: "",
   });
   const undoRef = useRef<() => void>(() => {});
-  const [batchActive, setBatchActive] = useState(false);
+  const [keepViewportTick, setKeepViewportTick] = useState(0);
 
   const settings = useSettingsState();
   const { models, selectedModel, setSelectedModel, fetchModels } = useModels(
@@ -69,44 +157,64 @@ export default function App() {
     imageSrc,
     setImageSrc,
     handleImportImages,
+    handleImportFolder,
     loadImageByIndex,
     selectImageAt,
-  } = useImageLibrary(setProgress, batchActive);
+  } = useImageLibrary(setProgress, false);
 
-  // При смене текущего изображения или обновлении списка — подставляем его items
+  const updateDetectedItems = useCallback(
+    (
+      updater: (prev: DetectedTextItem[] | null) => DetectedTextItem[] | null
+    ) => {
+      setDetectedItems(updater);
+      setImageList((prevList) => {
+        const newList = [...prevList];
+        const currentImage = newList[currentImageIndex];
+        if (currentImage) {
+          const newItems = updater(currentImage.items ?? null);
+          newList[currentImageIndex] = { ...currentImage, items: newItems };
+        }
+        return newList;
+      });
+    },
+    [currentImageIndex, setImageList]
+  );
+
   useEffect(() => {
     const cur = imageList[currentImageIndex];
-    if (cur) setDetectedItems(cur.items ?? null);
+    setDetectedItems(cur?.items ?? null);
   }, [currentImageIndex, imageList]);
 
-  const laidOut = useTextLayout(settings.showCanvasText ? detectedItems : null);
-  const itemsForCanvas: LaidOutTextItem[] | null = detectedItems
-    ? detectedItems.map((i) => {
-        const layout = laidOut?.find((x) => x.id === i.id)?.layout;
-        return layout
-          ? ({ ...i, layout } as LaidOutTextItem)
-          : ({ ...i } as LaidOutTextItem);
-      })
-    : null;
+  const handleSelectImage = (index: number) => {
+    if (index === currentImageIndex) return;
+    selectImageAt(index);
+    setSelectedBoxId(null);
+  };
+
+  const itemsForCanvas = useTextLayout(
+    settings.showCanvasText ? detectedItems : null
+  );
 
   const { handleDetect } = useDetection({
     imageSrc,
-    editMode,
     apiBaseUrl: settings.apiBaseUrl,
-    setDetectedItems,
+    setDetectedItems: updateDetectedItems,
     setIsLoading,
     usePanelDetection: settings.usePanelDetection,
+    detectionModel: settings.detectionModel,
   });
+
   const { recognizeAllBubbles } = useOcr({
     imageSrc,
     detectedItems,
     editMode,
     apiBaseUrl: settings.apiBaseUrl,
-    setDetectedItems,
+    setDetectedItems: updateDetectedItems,
     setIsLoading,
     ocrEngine: settings.ocrEngine,
     easyOcrLangs: "en",
   });
+
   const { translateAllBubbles, retranslateFromCache } = useTranslation({
     detectedItems,
     editMode,
@@ -117,132 +225,160 @@ export default function App() {
     deeplxUrl: settings.deeplxUrl,
     deeplxApiKey: settings.deeplxApiKey,
     streamTranslation: settings.streamTranslation,
-    setDetectedItems,
+    setDetectedItems: updateDetectedItems,
     setIsLoading,
-    onStreamUpdate: () => {}, // лог стрима не показываем
+    onStreamUpdate: () => {},
     onStreamEnd: () => {},
     deeplTargetLang: settings.deeplTargetLang,
   });
 
-  // Авто-ретрансляция из кэша только при смене целевого языка
   useEffect(() => {
-    if (!detectedItems) return;
-    if (detectedItems.some((item) => item.cachedIntermediateText)) {
+    if (isLoadingState.translate) return;
+    if (detectedItems?.some((item) => item.cachedIntermediateText)) {
       retranslateFromCache(settings.deeplTargetLang);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.deeplTargetLang]);
+  }, [
+    settings.deeplTargetLang,
+    retranslateFromCache,
+    detectedItems,
+    isLoadingState.translate,
+  ]);
 
-  const { processCurrentAll, processAllImagesAll } = useProcessAll({
+  const handleImageUpdate = useCallback(
+    (newImageSrc: string) => {
+      // Не сбрасывать вьюпорт на следующую загрузку
+      setKeepViewportTick((t) => t + 1);
+      setImageSrc(newImageSrc);
+      setImageList((prev) => {
+        const newList = [...prev];
+        if (newList[currentImageIndex]) {
+          newList[currentImageIndex] = {
+            ...newList[currentImageIndex],
+            dataUrl: newImageSrc,
+            thumbnail: newImageSrc,
+          };
+        }
+        return newList;
+      });
+    },
+    [currentImageIndex, setImageSrc, setImageList]
+  );
+
+  const { isInpainting, inpaintAuto, inpaintManual } = useInpainting({
+    imageSrc,
     apiBaseUrl: settings.apiBaseUrl,
-    usePanelDetection: settings.usePanelDetection,
-    translationUrl: settings.translationUrl,
-    selectedModel,
-    systemPrompt: settings.systemPrompt,
-    enableTwoStepTranslation: settings.enableTwoStepTranslation,
-    deeplxUrl: settings.deeplxUrl,
-    deeplxApiKey: settings.deeplxApiKey,
-    deeplTargetLang: settings.deeplTargetLang,
-    setDetectedItems,
-    setImageList,
-    setProgress,
-    setBatchActive,
+    selectedBubbleId: selectedBoxId,
+    detectedItems,
+    onImageUpdate: handleImageUpdate,
+    onProgress: (p) => setProgress((prev) => ({ ...prev, ...p })),
   });
+
+  const isLoading = { ...isLoadingState, inpainting: isInpainting };
+
+  const handleInpaintManual = useCallback(
+    async (maskDataUrl: string) => {
+      if (isInpainting) return;
+      await inpaintManual(
+        maskDataUrl,
+        settings.inpaintModel || "lama_large_512px"
+      );
+    },
+    [isInpainting, inpaintManual, settings.inpaintModel]
+  );
+
+  // Снимок маски -> сохранить в текущем ImageInfo -> запустить инпейнт -> очистить маску
+  const handleMaskSnapshot = useCallback(
+    async (dataUrl: string | null) => {
+      if (!dataUrl) return;
+      setImageList((prev) => {
+        const next = [...prev];
+        const cur = next[currentImageIndex];
+        if (cur) next[currentImageIndex] = { ...cur, maskDataUrl: dataUrl };
+        return next;
+      });
+      await handleInpaintManual(dataUrl);
+      setClearMask((p) => p + 1);
+      // по желанию: автоматический выход из maskMode
+      // setMaskMode(false);
+    },
+    [currentImageIndex, setImageList, handleInpaintManual]
+  );
 
   const onImageLoaded = useCallback(
     (dataUrl: string) => {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const imageName = `dropped-image-${timestamp}.png`;
-
+      const imageName = `dropped-image-${Date.now()}.png`;
       const newImageInfo = {
         name: imageName,
         path: `temp://${imageName}`,
-        dataUrl: dataUrl,
+        dataUrl,
         thumbnail: dataUrl,
-        items: [] as DetectedTextItem[],
+        items: [],
+        maskDataUrl: null as string | null,
       };
-
       setImageList((prev) => {
         const newList = [...prev, newImageInfo];
-        const newIndex = newList.length - 1;
-
+        // Автоматически выбрать только что добавленное
         setTimeout(() => {
-          setCurrentImageIndex(newIndex);
+          handleSelectImage(newList.length - 1);
         }, 0);
-
         return newList;
       });
-
       setImageSrc(dataUrl);
       setDetectedItems([]);
-      setSelectedBoxId(null);
     },
-    [setImageSrc, setImageList, setCurrentImageIndex]
+    [setImageSrc, setImageList, handleSelectImage]
   );
-  const { isHtmlDragOver } = useDnDImport(onImageLoaded);
+
+  useDnDImport(onImageLoaded);
 
   const handleUpdateTextFields = useCallback(
     (id: number, fields: Partial<DetectedTextItem>) => {
-      setDetectedItems((prev) =>
+      updateDetectedItems((prev) =>
         prev
           ? prev.map((it) => (it.id === id ? { ...it, ...fields } : it))
           : prev
       );
     },
-    []
+    [updateDetectedItems]
   );
 
-  const toggleEditMode = useCallback(() => {
-    if (!imageSrc) return;
-    setEditMode((prev) => {
-      if (prev) {
-        setAddingBubble(false);
-        setSelectedBoxId(null);
-      }
-      return !prev;
-    });
-  }, [imageSrc]);
-
-  const handleAddBubble = useCallback((newBox: BoundingBox) => {
-    setDetectedItems((prev) => {
-      const arr = prev || [];
-      const maxId = arr.reduce((m, it) => Math.max(m, it.id), 0);
-      return [
-        ...arr,
-        {
-          id: maxId + 1,
-          box: newBox,
-          ocrText: null,
-          translation: null,
-          cachedIntermediateText: null,
-          cachedIntermediateLang: null,
-          textProperties: {
-            fontFamily: "Arial",
-            fontSize: 16,
-            fontWeight: "normal",
-            fontStyle: "normal",
-            textDecoration: "none",
-            color: "#000",
-            strokeColor: "#FFF",
-            strokeWidth: 2,
+  const handleAddBubble = useCallback(
+    (newBox: BoundingBox) => {
+      updateDetectedItems((prev) => {
+        const arr = prev || [];
+        const maxId = arr.reduce((m, it) => Math.max(m, it.id), 0);
+        return [
+          ...arr,
+          {
+            id: maxId + 1,
+            box: newBox,
+            ocrText: null,
+            translation: null,
+            cachedIntermediateText: null,
+            cachedIntermediateLang: null,
+            textProperties: DEFAULT_TEXT_PROPERTIES,
           },
-        },
-      ];
-    });
-    setAddingBubble(false);
-  }, []);
+        ];
+      });
+      setAddingBubble(false);
+    },
+    [updateDetectedItems]
+  );
 
-  const handleUpdateBubble = useCallback((id: number, newBox: BoundingBox) => {
-    setDetectedItems((prev) =>
-      prev
-        ? prev.map((it) => (it.id === id ? { ...it, box: newBox } : it))
-        : null
-    );
-  }, []);
+  const handleUpdateBubble = useCallback(
+    (id: number, newBox: BoundingBox) => {
+      updateDetectedItems((prev) =>
+        prev
+          ? prev.map((it) => (it.id === id ? { ...it, box: newBox } : it))
+          : null
+      );
+    },
+    [updateDetectedItems]
+  );
 
   const handleDeleteBubble = useCallback(() => {
-    if (selectedBoxId === null || !editMode) return;
-    setDetectedItems((prev) =>
+    if (selectedBoxId === null) return;
+    updateDetectedItems((prev) =>
       prev
         ? prev
             .filter((it) => it.id !== selectedBoxId)
@@ -250,37 +386,93 @@ export default function App() {
         : null
     );
     setSelectedBoxId(null);
-  }, [selectedBoxId, editMode]);
+  }, [selectedBoxId, updateDetectedItems]);
+
+  const handleReorder = useCallback(
+    (sourceId: number, targetId: number) => {
+      updateDetectedItems((prev) => {
+        if (!prev) return null;
+        const items = [...prev];
+        const from = items.findIndex((i) => i.id === sourceId);
+        const to =
+          targetId === -1
+            ? items.length
+            : items.findIndex((i) => i.id === targetId);
+        if (from === -1 || to === -1) return items;
+        const [moved] = items.splice(from, 1);
+        items.splice(from < to ? to - 1 : to, 0, moved);
+        return items.map((it, idx) => ({ ...it, id: idx + 1 }));
+      });
+    },
+    [updateDetectedItems]
+  );
+
+  const toggleMaskMode = useCallback(() => {
+    if (imageSrc) setMaskMode((p) => !p);
+  }, [imageSrc]);
+
+  const handleClearMask = useCallback(() => setClearMask((p) => p + 1), []);
+
+  const handleInpaintAuto = useCallback(() => {
+    if (selectedBoxId && !isInpainting) inpaintAuto();
+  }, [selectedBoxId, isInpainting, inpaintAuto]);
 
   const toggleAddBubble = useCallback(() => {
-    if (!editMode || !imageSrc) return;
-    setAddingBubble((p) => !p);
-  }, [editMode, imageSrc]);
+    if (imageSrc) setAddingBubble((p) => !p);
+  }, [imageSrc]);
 
-  const handleExportProject = useCallback(async () => {
+  // Экспорт изображений (финалов)
+  const handleExportImages = useCallback(async () => {
     if (!imageList.length) {
       alert("No images to export");
       return;
     }
+    try {
+      setProgress({
+        active: true,
+        current: 0,
+        total: imageList.length,
+        label: "Exporting images...",
+      });
 
+      const finals = [];
+      for (let i = 0; i < imageList.length; i++) {
+        const img = imageList[i];
+        const dataUrl = await renderFinalImage(img.dataUrl, img.items || []);
+        finals.push({ name: img.name, dataUrl });
+        setProgress({
+          active: true,
+          current: i + 1,
+          total: imageList.length,
+          label: "Exporting images...",
+        });
+      }
+
+      await invoke("export_flattened_images", { images: finals });
+      alert("Images exported successfully!");
+    } catch (e) {
+      console.error(e);
+      alert(`Export images failed: ${e}`);
+    } finally {
+      setProgress({ active: false, current: 0, total: 0, label: "" });
+    }
+  }, [imageList, setProgress]);
+
+  // Экспорт проекта v2 (без финалов)
+  const handleExportProject = useCallback(async () => {
+    if (!imageList.length) return alert("No images to export");
     try {
       const projectData = {
-        metadata: {
-          version: "1",
-        },
+        metadata: { version: "2" }, // v2
         images: imageList.map((img) => ({
           name: img.name,
           items: (img.items || []).map((item) => ({
-            box: {
-              x1: item.box.x1,
-              y1: item.box.y1,
-              x2: item.box.x2,
-              y2: item.box.y2,
-            },
+            box: item.box,
             ocrText: item.ocrText,
             translation: item.translation,
             cachedIntermediateText: item.cachedIntermediateText || null,
             cachedIntermediateLang: item.cachedIntermediateLang || null,
+            textProperties: item.textProperties || DEFAULT_TEXT_PROPERTIES,
           })),
         })),
         settings: {
@@ -291,21 +483,13 @@ export default function App() {
             : null,
         },
       };
-
-      // Prepare image data including base64 for temp:// paths
-      const imageData = imageList.map((img) => {
-        return {
-          path: img.path,
-          dataUrl: img.dataUrl, // Always include dataUrl for all images
-          name: img.name,
-        };
-      });
-
-      await invoke("export_project", {
-        projectData,
-        imageData,
-      });
-
+      const imageData = imageList.map((img) => ({
+        path: img.path,
+        dataUrl: img.dataUrl,
+        name: img.name,
+        maskDataUrl: img.maskDataUrl || null,
+      }));
+      await invoke("export_project", { projectData, imageData });
       alert("Project exported successfully!");
     } catch (error) {
       console.error("Export failed:", error);
@@ -318,52 +502,23 @@ export default function App() {
       const projectData = await invoke("import_project");
       if (projectData) {
         const data = projectData as any;
-
-        const images = data.images || [];
-        const projectSettings = data.settings || {};
-
-        const processedImages = images.map((img: any) => ({
-          name: img.name,
-          path: img.path || `imported/${img.name}`,
-          dataUrl: img.dataUrl,
-          thumbnail: img.thumbnail || img.dataUrl,
-          items: (img.items || []).map((item: any, itemIndex: number) => ({
-            id: itemIndex + 1, // Reassign sequential IDs
-            box: item.box,
-            ocrText: item.ocrText,
-            translation: item.translation,
-            cachedIntermediateText: item.cachedIntermediateText || null,
-            cachedIntermediateLang: item.cachedIntermediateLang || null,
-            textProperties: item.textProperties || {
-              fontFamily: "Arial",
-              fontSize: 16,
-              fontWeight: "normal",
-              fontStyle: "normal",
-              textDecoration: "none",
-              color: "#000",
-              strokeColor: "#FFF",
-              strokeWidth: 2,
-            },
+        const images = (data.images || []).map((img: any) => ({
+          ...img,
+          items: (img.items || []).map((item: any, idx: number) => ({
+            ...item,
+            id: idx + 1,
           })),
         }));
-
-        setImageList(processedImages);
-        if (processedImages.length > 0) {
+        setImageList(images);
+        if (images.length > 0) {
           setCurrentImageIndex(0);
-          setImageSrc(processedImages[0].dataUrl);
-          setDetectedItems(processedImages[0].items || []);
+          setImageSrc(images[0].dataUrl);
+          setDetectedItems(images[0].items || []);
         }
-
-        if (projectSettings.deeplTargetLang) {
-          settings.setDeeplTargetLang(projectSettings.deeplTargetLang);
-        }
-        if (
-          projectSettings.cachedIntermediateLang &&
-          projectSettings.cachedIntermediateLang === "EN"
-        ) {
+        if (data.settings?.deeplTargetLang)
+          settings.setDeeplTargetLang(data.settings.deeplTargetLang);
+        if (data.settings?.cachedIntermediateLang === "EN")
           settings.setEnableTwoStepTranslation(true);
-        }
-
         alert("Project imported successfully!");
       }
     } catch (error) {
@@ -379,28 +534,22 @@ export default function App() {
   ]);
 
   const handleBoxSelect = useCallback(
-    (itemOrId: DetectedTextItem | null) => {
+    (item: DetectedTextItem | null) => {
       if (isAddingBubble) return;
-      const id = itemOrId?.id ?? null;
-      setSelectedBoxId(id);
-      if (id !== null) setShowFloatingWindow(true);
+      setSelectedBoxId(item?.id ?? null);
     },
     [isAddingBubble]
   );
 
-  // Контекстное меню рабочего поля
   useHotkeys({
     editMode,
-    isCanvasFullscreen,
     isAddingBubble,
     showSettingsModal,
-    toggleEditMode,
     toggleAddBubble,
     handleDeleteBubble,
     handleDetect,
     recognizeAllBubbles,
     translateAllBubbles,
-    exitFullscreen: () => setCanvasFullscreen(false),
     cancelAddBubble: () => setAddingBubble(false),
     closeSettings: () => setShowSettingsModal(false),
     onUndo: () => undoRef.current?.(),
@@ -409,53 +558,33 @@ export default function App() {
   const { ctxMenu, openContextMenu, closeContextMenu, menuItems } =
     useContextMenu({
       imageSrc,
-      editMode,
-      isAddingBubble,
-      selectedBoxId,
       detectedItems,
-      imageList,
       progress,
-      toggleEditMode,
-      toggleAddBubble,
-      handleDeleteBubble,
       handleDetect,
       recognizeAllBubbles,
       translateAllBubbles,
-      processCurrentAll: () =>
-        processCurrentAll(imageSrc, imageList[currentImageIndex]),
-      processAllImagesAll: () => processAllImagesAll(imageList),
-      handleExportProject,
-      handleImportProject,
     });
 
-  // Удаление одного изображения и очистка списка
   const handleRemoveImageAt = useCallback(
     (idx: number) => {
       setImageList((prev) => {
-        if (idx < 0 || idx >= prev.length) return prev;
-        const next = [...prev];
-        next.splice(idx, 1);
-
-        if (prev.length === 1) {
-          setCurrentImageIndex(0);
+        const next = prev.filter((_, i) => i !== idx);
+        if (next.length === 0) {
           setImageSrc(null);
           setDetectedItems(null);
-          return next;
-        }
-
-        if (idx === currentImageIndex) {
+          setCurrentImageIndex(0);
+        } else if (idx === currentImageIndex) {
           const newIndex = Math.min(idx, next.length - 1);
-          setCurrentImageIndex(newIndex);
-          setTimeout(() => loadImageByIndex(newIndex), 0);
+          handleSelectImage(newIndex);
         } else if (idx < currentImageIndex) {
-          setCurrentImageIndex((i) => Math.max(0, i - 1));
+          setCurrentImageIndex((i) => i - 1);
         }
         return next;
       });
     },
     [
       currentImageIndex,
-      loadImageByIndex,
+      handleSelectImage,
       setImageList,
       setCurrentImageIndex,
       setImageSrc,
@@ -473,33 +602,27 @@ export default function App() {
   return (
     <div class="app-root">
       <div class="app-container">
-        <AppHeader
+        <LeftMenuBar
           onImportImages={handleImportImages}
-          onShowSettings={() => setShowSettingsModal(true)}
-          onExportProject={handleExportProject}
+          onImportFolder={handleImportFolder}
           onImportProject={handleImportProject}
+          onExportProject={handleExportProject}
+          onExportImages={handleExportImages} // NEW
+          onShowSettings={() => setShowSettingsModal(true)}
         />
-        <TopProgressBar
-          active={progress.active}
-          current={progress.current}
-          total={progress.total}
-          label={progress.label}
-        />
+        <TopProgressBar {...progress} />
         <main class="app-main">
           <div className="left-sidebar">
             <ImageList
               images={imageList}
               currentIndex={currentImageIndex}
-              onSelect={selectImageAt}
+              onSelect={handleSelectImage}
               onRemoveAt={handleRemoveImageAt}
               onClearAll={handleClearAllImages}
             />
           </div>
-
-          <div
-            class="main-workspace"
-            onContextMenu={(e) => openContextMenu(e as any)}
-          >
+          <div class="main-workspace" onContextMenu={openContextMenu}>
+            {/* @ts-ignore pass keepViewportToken to ImageCanvas (updated to support it) */}
             <ImageCanvas
               imageSrc={imageSrc}
               detectedItems={itemsForCanvas}
@@ -510,89 +633,42 @@ export default function App() {
               onAddBubble={handleAddBubble}
               onUpdateBubble={handleUpdateBubble}
               onUndoExternal={(fn) => (undoRef.current = fn)}
+              maskMode={maskMode}
+              brushSize={brushSize}
+              takeManualMaskSnapshot={maskSnapshot}
+              onMaskSnapshot={handleMaskSnapshot}
+              clearMaskSignal={clearMask}
+              onMaskCleared={() => {}}
+              keepViewportToken={keepViewportTick}
             />
           </div>
-
-          <div className="right-sidebar">
-            <ResultDisplay
-              detectedItems={detectedItems}
-              selectedBoxId={selectedBoxId}
-              onBoxSelect={handleBoxSelect}
-              editMode={editMode}
-              onReorder={(sourceId, targetId) =>
-                setDetectedItems((prev) => {
-                  if (!prev) return null;
-                  const items = [...prev];
-                  const from = items.findIndex((i) => i.id === sourceId);
-                  const to =
-                    targetId === -1
-                      ? items.length - 1
-                      : items.findIndex((i) => i.id === targetId);
-                  if (from === -1 || to === -1) return items;
-                  const [moved] = items.splice(from, 1);
-                  items.splice(to, 0, moved);
-                  return items.map((it, idx) => ({ ...it, id: idx + 1 }));
-                })
-              }
-            />
-          </div>
+          <CombinedRightPanel
+            detectedItems={detectedItems}
+            selectedBoxId={selectedBoxId}
+            onBoxSelect={handleBoxSelect}
+            editMode={editMode}
+            onReorder={handleReorder}
+            onUpdateTextFields={handleUpdateTextFields}
+          />
         </main>
+        <BottomToolbar
+          imageSrc={imageSrc}
+          isLoading={isLoading}
+          isAddingBubble={isAddingBubble}
+          onToggleAddBubble={toggleAddBubble}
+          onDeleteBubble={handleDeleteBubble}
+          selectedBubbleId={selectedBoxId}
+          maskMode={maskMode}
+          onToggleMaskMode={toggleMaskMode}
+          onInpaintAuto={handleInpaintAuto}
+          onInpaintManual={() => setMaskSnapshot((p) => p + 1)}
+          onClearMask={handleClearMask}
+          brushSize={brushSize}
+          onBrushSizeChange={setBrushSize}
+        />
       </div>
 
-      {isHtmlDragOver && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 3000,
-            background: "rgba(59,130,246,0.08)",
-            border: "3px dashed #3b82f6",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#1e40af",
-            fontSize: "1.1rem",
-            fontWeight: 600,
-            pointerEvents: "none",
-          }}
-        >
-          Drop image to import
-        </div>
-      )}
-
-      {isCanvasFullscreen && (
-        <div class="fullscreen-canvas-container">
-          <button
-            class="btn btn-outline fullscreen-exit-btn"
-            onClick={() => setCanvasFullscreen(false)}
-            title="Exit Fullscreen (Esc)"
-          >
-            <FullscreenExitIcon class="icon" /> Exit Fullscreen
-          </button>
-        </div>
-      )}
-
-      {showFloatingWindow && selectedBoxId !== null && (
-        <FloatingWindow
-          position={floatingWindowPosition}
-          settings={{ showOcr: true, showTranslation: true }}
-          detectedItems={detectedItems}
-          selectedBoxId={selectedBoxId}
-          onPositionUpdate={(x, y) => setFloatingWindowPosition({ x, y })}
-          onSettingsUpdate={() => {}}
-          onClose={() => setShowFloatingWindow(false)}
-          editMode={editMode}
-          onUpdateText={handleUpdateTextFields}
-        />
-      )}
-
-      <ContextMenu
-        x={ctxMenu.x}
-        y={ctxMenu.y}
-        visible={ctxMenu.visible}
-        items={menuItems}
-        onClose={closeContextMenu}
-      />
+      <ContextMenu {...ctxMenu} items={menuItems} onClose={closeContextMenu} />
 
       {showSettingsModal && (
         <div
@@ -608,39 +684,17 @@ export default function App() {
               <button
                 class="close-button"
                 onClick={() => setShowSettingsModal(false)}
-                title="Close (Esc)"
               >
                 ✕
               </button>
             </div>
             <div class="settings-modal-body">
               <Settings
-                apiBaseUrl={settings.apiBaseUrl}
-                setApiBaseUrl={settings.setApiBaseUrl}
-                translationUrl={settings.translationUrl}
-                setTranslationUrl={settings.setTranslationUrl}
+                {...settings}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 models={models}
                 fetchModels={fetchModels}
-                systemPrompt={settings.systemPrompt}
-                setSystemPrompt={settings.setSystemPrompt}
-                usePanelDetection={settings.usePanelDetection}
-                setUsePanelDetection={settings.setUsePanelDetection}
-                streamTranslation={settings.streamTranslation}
-                setStreamTranslation={settings.setStreamTranslation}
-                enableTwoStepTranslation={settings.enableTwoStepTranslation}
-                setEnableTwoStepTranslation={
-                  settings.setEnableTwoStepTranslation
-                }
-                deeplxUrl={settings.deeplxUrl}
-                setDeeplxUrl={settings.setDeeplxUrl}
-                ocrEngine={settings.ocrEngine}
-                setOcrEngine={settings.setOcrEngine}
-                showCanvasText={settings.showCanvasText}
-                setShowCanvasText={settings.setShowCanvasText}
-                deeplTargetLang={settings.deeplTargetLang}
-                setDeeplTargetLang={settings.setDeeplTargetLang}
               />
             </div>
           </div>

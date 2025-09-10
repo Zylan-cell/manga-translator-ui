@@ -12,13 +12,12 @@ interface ImageCanvasProps {
   onBoxSelect: (item: DetectedTextItem | null) => void;
   onAddBubble: (box: BoundingBox) => void;
   onUpdateBubble: (id: number, box: BoundingBox) => void;
-  textMode?: boolean;
-  onAddTextAt?: (x: number, y: number) => void;
   textItems?: TextItem[] | null;
   maskMode?: boolean;
   eraseMode?: boolean;
   brushSize?: number;
   takeManualMaskSnapshot?: number;
+  keepViewportToken?: number;
   onMaskSnapshot?: (dataUrl: string | null) => void;
   clearMaskSignal?: number;
   onMaskCleared?: () => void;
@@ -30,18 +29,14 @@ export default function ImageCanvas(props: ImageCanvasProps) {
   const imageRef = useRef<HTMLImageElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
 
+  // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+  // Мы снова "ловим" scale и position, которые возвращает хук useCanvas
   const { scale, position } = useCanvas({
     containerRef,
     imageRef,
     canvasRef: overlayRef,
-    detectedItems: props.detectedItems,
-    selectedBoxId: props.selectedBoxId,
-    editMode: props.editMode,
-    isAdding: props.isAdding,
-    onBoxSelect: props.onBoxSelect,
-    onAddBubble: props.onAddBubble,
-    onUpdateBubble: props.onUpdateBubble,
-    textItems: props.textItems,
+    ...props,
+    keepViewportToken: props.keepViewportToken,
   });
 
   return (
@@ -52,10 +47,9 @@ export default function ImageCanvas(props: ImageCanvasProps) {
         height: "100%",
         overflow: "hidden",
         background: "#e5e7eb",
-        cursor: "grab",
-        position: "relative",
-        touchAction: "none", // Отключаем стандартные действия браузера для сенсорных событий
+        cursor: props.maskMode ? "crosshair" : "grab",
       }}
+      onDragStart={(e) => e.preventDefault()}
     >
       {props.imageSrc ? (
         <>

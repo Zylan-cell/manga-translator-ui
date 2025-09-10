@@ -6,17 +6,17 @@ import {
   RecognizeBatchResponse,
 } from "../types";
 
-type SetLoading = (updater: (prev: LoadingState) => LoadingState) => void;
-type SetItems = (
+type SetItemsUpdater = (
   updater: (prev: DetectedTextItem[] | null) => DetectedTextItem[] | null
 ) => void;
+type SetLoading = (updater: (prev: LoadingState) => LoadingState) => void;
 
 interface UseOcrArgs {
   imageSrc: string | null;
   detectedItems: DetectedTextItem[] | null;
   editMode: boolean;
   apiBaseUrl: string;
-  setDetectedItems: SetItems;
+  setDetectedItems: SetItemsUpdater;
   setIsLoading: SetLoading;
   ocrEngine: "manga";
   easyOcrLangs: string;
@@ -25,16 +25,17 @@ interface UseOcrArgs {
 export function useOcr({
   imageSrc,
   detectedItems,
-  editMode,
   apiBaseUrl,
   setDetectedItems,
   setIsLoading,
   ocrEngine,
-  easyOcrLangs,
 }: UseOcrArgs) {
   const recognizeAllBubbles = useCallback(async () => {
-    if (!imageSrc || !detectedItems || !detectedItems.length || editMode)
+    if (!imageSrc || !detectedItems || !detectedItems.length) {
+      console.warn("recognizeAllBubbles: Pre-conditions not met. Aborting.");
       return;
+    }
+
     try {
       setIsLoading((p) => ({ ...p, ocr: true }));
 
@@ -67,14 +68,24 @@ export function useOcr({
       );
       const base64Images = croppedImages.map((d) => d.split(",")[1]);
 
+      // Формируем единый payload, который будет передан в Rust
+      const payload = {
+        images_data: base64Images,
+        engine: ocrEngine,
+        langs: undefined, // MangaOCR не использует этот параметр
+        auto_rotate: false,
+      };
+
+      console.log(
+        `Invoking tauri command: 'recognize_images_batch' with ${base64Images.length} images.`
+      );
+
+      // Передаем payload целиком
       const data = await invoke<RecognizeBatchResponse>(
         "recognize_images_batch",
         {
           apiUrl: apiBaseUrl,
-          imagesData: base64Images,
-          engine: ocrEngine,
-          langs: undefined, // MangaOCR doesn't use langs parameter
-          autoRotate: false, // Remove auto-rotate feature
+          payload: payload,
         }
       );
 
@@ -86,21 +97,20 @@ export function useOcr({
           ocrText: data.results[i] || null,
         }))
       );
+      console.log("OCR successful, items updated.");
     } catch (e) {
-      console.error("OCR error:", e);
-      alert("OCR failed. Check API URL and logs.");
+      console.error("OCR invoke error:", e);
+      alert(`OCR failed. Check console for details. Error: ${e}`);
     } finally {
       setIsLoading((p) => ({ ...p, ocr: false }));
     }
   }, [
     imageSrc,
     detectedItems,
-    editMode,
     apiBaseUrl,
     setDetectedItems,
     setIsLoading,
     ocrEngine,
-    easyOcrLangs,
   ]);
 
   return { recognizeAllBubbles };

@@ -80,7 +80,10 @@ export default function ContextMenu({ x, y, visible, items, onClose }: Props) {
             key={`mi-${i}`}
             class="context-item"
             disabled={!!it.disabled}
-            onClick={() => {
+            onClick={(e) => {
+              // Получаем объект события 'e'
+              e.stopPropagation(); // <-- ГЛАВНОЕ ИЗМЕНЕНИЕ: Останавливаем всплытие события
+              console.log(`Context menu item clicked: "${it.label}"`); // Добавим лог для 100% уверенности
               it.onClick?.();
               onClose();
             }}

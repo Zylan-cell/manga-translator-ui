@@ -2,16 +2,13 @@ import { useEffect } from "preact/hooks";
 
 interface UseHotkeysArgs {
   editMode: boolean;
-  isCanvasFullscreen: boolean;
   isAddingBubble: boolean;
   showSettingsModal: boolean;
-  toggleEditMode: () => void;
   toggleAddBubble: () => void;
   handleDeleteBubble: () => void;
   handleDetect: () => void;
   recognizeAllBubbles: () => void;
   translateAllBubbles: () => void;
-  exitFullscreen: () => void;
   cancelAddBubble: () => void;
   closeSettings: () => void;
   onUndo?: () => void;
@@ -33,12 +30,6 @@ export function useHotkeys(args: UseHotkeysArgs) {
         return;
       }
 
-      if (e.code === "KeyE") {
-        e.preventDefault();
-        args.toggleEditMode();
-        return;
-      }
-
       if (args.editMode) {
         if (e.code === "KeyA") {
           e.preventDefault();
@@ -50,26 +41,26 @@ export function useHotkeys(args: UseHotkeysArgs) {
           args.handleDeleteBubble();
           return;
         }
-      } else {
-        if (e.code === "KeyD") {
-          e.preventDefault();
-          args.handleDetect();
-          return;
-        }
-        if (e.code === "KeyR") {
-          e.preventDefault();
-          args.recognizeAllBubbles();
-          return;
-        }
-        if (e.code === "KeyT") {
-          e.preventDefault();
-          args.translateAllBubbles();
-          return;
-        }
       }
 
+      if (e.code === "KeyD") {
+        e.preventDefault();
+        args.handleDetect();
+        return;
+      }
+      if (e.code === "KeyR") {
+        e.preventDefault();
+        args.recognizeAllBubbles();
+        return;
+      }
+      if (e.code === "KeyT") {
+        e.preventDefault();
+        args.translateAllBubbles();
+        return;
+      }
+
+      // ИЗМЕНЕНИЕ: Убрана логика для полноэкранного режима
       if (e.code === "Escape") {
-        if (args.isCanvasFullscreen) args.exitFullscreen();
         if (args.isAddingBubble) args.cancelAddBubble();
         if (args.showSettingsModal) args.closeSettings();
       }

@@ -17,14 +17,24 @@ export interface TextProperties {
   strokeWidth: number;
 }
 
+// ИЗМЕНЕНИЕ: Добавляем константу со стандартными свойствами текста
+export const DEFAULT_TEXT_PROPERTIES: TextProperties = {
+  fontFamily: "Arial",
+  fontSize: 24,
+  fontWeight: "bold",
+  fontStyle: "normal",
+  textDecoration: "none",
+  color: "#000000",
+  strokeColor: "#FFFFFF",
+  strokeWidth: 2,
+};
+
 export interface DetectedTextItem {
   id: number;
   box: BoundingBox;
   ocrText: string | null;
   translation: string | null;
-  // Cached intermediate translation (e.g., Japanese -> English for 2-step translation)
   cachedIntermediateText: string | null;
-  // Language code of the cached intermediate text (e.g., "EN")
   cachedIntermediateLang: string | null;
   textProperties?: TextProperties;
 }
@@ -58,6 +68,8 @@ export interface ImageInfo {
   thumbnail: string;
   // результаты обработки для страницы (детект/ocr/перевод)
   items?: DetectedTextItem[] | null;
+  maskDataUrl?: string | null;
+  finalDataUrl?: string | null;
 }
 
 // Типы для API

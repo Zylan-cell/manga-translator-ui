@@ -12,7 +12,6 @@ import "./styles/panels.css";
 import "./styles/responsive.css";
 import "./styles/results.css";
 import "./styles/sidebars.css";
-import "./components/ui/FloatingWindow.css";
 import "./components/ui/Settings.css";
 import "./components/ui/ContextMenu.css";
 import "./styles/viewer.css"; // Добавляем новые стили

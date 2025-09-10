@@ -162,3 +162,115 @@
 .mask-options .slider {
   flex-grow: 1;
 }
+
+.brush-size-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin: var(--spacing-2) 0;
+}
+
+.brush-size-control label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.brush-size-control .slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-gray-200);
+  outline: none;
+  transition: background 0.3s;
+}
+
+.brush-size-control .slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.brush-size-control .slider::-webkit-slider-thumb:hover {
+  background: var(--color-primary-dark);
+}
+
+.brush-size-control .slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+  border: none;
+  transition: background 0.3s;
+}
+
+.brush-size-control .slider::-moz-range-thumb:hover {
+  background: var(--color-primary-dark);
+}
+
+.btn-warning {
+  color: var(--color-white);
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #d97706;
+  border-color: #d97706;
+}
+
+.btn-info {
+  color: var(--color-white);
+  background-color: #0ea5e9;
+  border-color: #0ea5e9;
+}
+
+.btn-info:hover:not(:disabled) {
+  background-color: #0284c7;
+  border-color: #0284c7;
+}
+
+.brush-size-value {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+  min-width: 40px;
+  text-align: center;
+}
+
+.inpainting-info {
+  background-color: var(--color-gray-50);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-3);
+  margin-top: var(--spacing-2);
+}
+
+.inpainting-info h4 {
+  margin: 0 0 var(--spacing-2) 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.inpainting-info ul {
+  margin: 0;
+  padding-left: var(--spacing-4);
+  list-style-type: disc;
+}
+
+.inpainting-info li {
+  margin-bottom: var(--spacing-1);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.inpainting-info strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}

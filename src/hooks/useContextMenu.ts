@@ -1,28 +1,16 @@
 // src/hooks/useContextMenu.ts
 import { useState } from "preact/hooks";
 import type { MenuItem } from "../components/ui/ContextMenu";
-import type { DetectedTextItem, ImageInfo } from "../types";
+import type { DetectedTextItem } from "../types";
 import type { ProgressState } from "../types/ui";
 
 type Args = {
   imageSrc: string | null;
-  editMode: boolean;
-  isAddingBubble: boolean;
-  selectedBoxId: number | null;
   detectedItems: DetectedTextItem[] | null;
-  imageList: ImageInfo[];
   progress: ProgressState;
-
-  toggleEditMode: () => void;
-  toggleAddBubble: () => void;
-  handleDeleteBubble: () => void;
   handleDetect: () => void;
   recognizeAllBubbles: () => void;
   translateAllBubbles: () => void;
-  processCurrentAll: () => void;
-  processAllImagesAll: () => void;
-  handleExportProject: () => void;
-  handleImportProject: () => void;
 };
 
 export function useContextMenu(args: Args) {
@@ -37,80 +25,28 @@ export function useContextMenu(args: Args) {
   const hasOcr = !!args.detectedItems?.some(
     (i) => i.ocrText && i.ocrText.trim()
   );
-  // Note: hasTranslations check removed since export image function was removed
 
   const items: MenuItem[] = [
     {
-      label: args.editMode ? "Exit Edit Mode" : "Enter Edit Mode",
-      shortcut: "E",
-      onClick: args.toggleEditMode,
+      // ИЗМЕНЕНО: Метка стала более понятной
+      label: "Detect Bubbles",
+      shortcut: "D",
+      onClick: args.handleDetect,
       disabled: !args.imageSrc || disabledBusy,
       separator: false,
     },
     {
-      label: args.isAddingBubble ? "Cancel Adding Bubble" : "Add Bubble",
-      shortcut: "A",
-      onClick: args.toggleAddBubble,
-      disabled: !args.imageSrc || !args.editMode || disabledBusy,
-      separator: false,
-    },
-    {
-      label: "Delete Selected",
-      shortcut: "Del",
-      onClick: args.handleDeleteBubble,
-      disabled: !args.editMode || args.selectedBoxId === null || disabledBusy,
-      separator: false,
-    },
-    { separator: true as true },
-    {
-      label: "Detect Bubbles (Current)",
-      shortcut: "D",
-      onClick: args.handleDetect,
-      disabled: !args.imageSrc || args.editMode || disabledBusy,
-      separator: false,
-    },
-    {
-      label: "Recognize Text (Current)",
+      label: "OCR",
       shortcut: "R",
       onClick: args.recognizeAllBubbles,
-      disabled:
-        !args.imageSrc ||
-        !args.detectedItems?.length ||
-        args.editMode ||
-        disabledBusy,
+      disabled: !args.imageSrc || !args.detectedItems?.length || disabledBusy,
       separator: false,
     },
     {
-      label: "Translate Text (Current)",
+      label: "Translate",
       shortcut: "T",
       onClick: args.translateAllBubbles,
-      disabled: !args.imageSrc || !hasOcr || args.editMode || disabledBusy,
-      separator: false,
-    },
-    { separator: true as true },
-    {
-      label: "Do All: Detect + OCR + Translate (Current)",
-      onClick: args.processCurrentAll,
-      disabled: !args.imageSrc || args.editMode || disabledBusy,
-      separator: false,
-    },
-    {
-      label: "Do All: Detect + OCR + Translate (All Images)",
-      onClick: args.processAllImagesAll,
-      disabled: !args.imageList.length || args.editMode || disabledBusy,
-      separator: false,
-    },
-    { separator: true as true },
-    {
-      label: "Export Project",
-      onClick: args.handleExportProject,
-      disabled: !args.imageList.length || disabledBusy,
-      separator: false,
-    },
-    {
-      label: "Import Project",
-      onClick: args.handleImportProject,
-      disabled: disabledBusy,
+      disabled: !args.imageSrc || !hasOcr || disabledBusy,
       separator: false,
     },
   ];

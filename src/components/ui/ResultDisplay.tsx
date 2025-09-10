@@ -7,7 +7,8 @@ interface ResultDisplayProps {
   selectedBoxId: number | null;
   onBoxSelect: (item: DetectedTextItem | null) => void;
   editMode: boolean;
-  onReorder: (sourceId: number, targetId: number) => void; // targetId === -1 -> в конец
+  onReorder: (sourceId: number, targetId: number) => void;
+  onUpdateTextFields: (id: number, fields: Partial<DetectedTextItem>) => void;
 }
 
 const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
@@ -16,6 +17,7 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
   onBoxSelect,
   editMode,
   onReorder,
+  onUpdateTextFields,
 }) => {
   const list = detectedItems || [];
   const ulRef = useRef<HTMLUListElement>(null);
@@ -24,7 +26,6 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
 
   const onItemClick = (e: MouseEvent, item: DetectedTextItem) => {
     e.stopPropagation();
-    // Выбор разрешён и в просмотре, и в редактировании
     onBoxSelect(item.id === selectedBoxId ? null : item);
   };
 
@@ -34,24 +35,10 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", String(id));
     }
-    const el = e.currentTarget as HTMLElement;
-    if (el && e.dataTransfer) {
-      const rect = el.getBoundingClientRect();
-      const ghost = el.cloneNode(true) as HTMLElement;
-      ghost.style.position = "absolute";
-      ghost.style.top = "-9999px";
-      ghost.style.left = "-9999px";
-      ghost.style.width = `${rect.width}px`;
-      ghost.classList.add("drag-ghost");
-      document.body.appendChild(ghost);
-      e.dataTransfer.setDragImage(ghost, rect.width / 2, rect.height / 2);
-      setTimeout(() => document.body.removeChild(ghost), 0);
-    }
   };
 
   const onListDragOver = (e: DragEvent) => {
     if (dragId === null) return;
-    // Разрешаем drop
     e.preventDefault();
     const ul = ulRef.current;
     if (!ul) return;
@@ -70,69 +57,45 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
     if (idx === -1) idx = rows.length;
 
     if (idx !== dropIndex) setDropIndex(idx);
-    // ВАЖНО: здесь НЕ вызываем onReorder — только визуально подсвечиваем место вставки
   };
 
   const onListDrop = (e: DragEvent) => {
-    // Делаем реальный reorder один раз — по факту drop
     e.preventDefault();
-    const ul = ulRef.current;
-    if (!ul) {
-      setDropIndex(null);
-      setDragId(null);
-      return;
-    }
-    const rows = Array.from(
-      ul.querySelectorAll<HTMLLIElement>("li.result-row")
-    );
-
     if (dragId !== null && dropIndex !== null) {
-      let targetId = -1; // -1 = в конец
-      if (dropIndex <= 0 && rows.length > 0) {
-        targetId = Number(rows[0].dataset.id);
-      } else if (dropIndex >= rows.length) {
-        targetId = -1; // уже установлен
-      } else {
-        targetId = Number(rows[dropIndex].dataset.id);
-      }
+      const targetItem = list[dropIndex];
+      const targetId = targetItem ? targetItem.id : -1;
       onReorder(dragId, targetId);
     }
-
     setDropIndex(null);
     setDragId(null);
   };
 
-  const onListDragLeave = (e: DragEvent) => {
-    const ul = ulRef.current;
-    if (!ul) return;
-    const rect = ul.getBoundingClientRect();
-    if (
-      e.clientX < rect.left ||
-      e.clientX > rect.right ||
-      e.clientY < rect.top ||
-      e.clientY > rect.bottom
-    ) {
-      setDropIndex(null);
-    }
+  const onListDragLeave = () => {
+    setDropIndex(null);
+  };
+
+  const handleTextChange = (
+    id: number,
+    field: "ocrText" | "translation",
+    value: string
+  ) => {
+    onUpdateTextFields(id, { [field]: value });
   };
 
   return (
     <div class="workspace-panel" onClick={() => onBoxSelect(null)}>
-      <div class="workspace-panel-header">
-        <h2>Results</h2>
-      </div>
       <div class="workspace-panel-content results-panel-content">
         {list.length > 0 ? (
           <ul
             class="results-list"
             ref={ulRef}
-            onDragOver={(e) => onListDragOver(e as unknown as DragEvent)}
-            onDrop={(e) => onListDrop(e as unknown as DragEvent)}
-            onDragLeave={(e) => onListDragLeave(e as unknown as DragEvent)}
+            onDragOver={onListDragOver}
+            onDrop={onListDrop}
+            onDragLeave={onListDragLeave}
           >
             {list.map((item, i) => {
-              const isSelectedForView = item.id === selectedBoxId;
-              const dragging = item.id === dragId;
+              const isSelected = item.id === selectedBoxId;
+              const isDragging = item.id === dragId;
               return (
                 <>
                   {dropIndex === i && dragId !== null && (
@@ -142,27 +105,18 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
                     key={item.id}
                     data-id={item.id}
                     class={`result-item result-row ${
-                      isSelectedForView ? "selected" : ""
-                    } ${dragging ? "dragging" : ""}`}
+                      isSelected ? "selected" : ""
+                    } ${isDragging ? "dragging" : ""}`}
                     draggable={editMode}
-                    onDragStart={(e) =>
-                      onDragStart(e as unknown as DragEvent, item.id)
-                    }
+                    onDragStart={(e) => onDragStart(e, item.id)}
                     onDragEnd={() => {
                       setDragId(null);
                       setDropIndex(null);
                     }}
-                    onClick={(e) =>
-                      onItemClick(e as unknown as MouseEvent, item)
-                    }
+                    onClick={(e) => onItemClick(e, item)}
                   >
                     <div class="result-item-header">
                       <span class="result-item-id">{i + 1}</span>
-                      <span class="result-item-title">
-                        {item.ocrText
-                          ? `"${item.ocrText.substring(0, 20)}..."`
-                          : "Detected Area"}
-                      </span>
                       <span
                         class={`badge ${
                           item.translation
@@ -180,11 +134,38 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
                       </span>
                     </div>
 
-                    {item.translation && (
-                      <div class="result-item-content">
-                        <strong>Translation:</strong> {item.translation}
+                    <div class="result-item-editor">
+                      <div class="editor-field">
+                        <label>OCR Text</label>
+                        <textarea
+                          value={item.ocrText || ""}
+                          onInput={(e) =>
+                            handleTextChange(
+                              item.id,
+                              "ocrText",
+                              (e.target as HTMLTextAreaElement).value
+                            )
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                          rows={3}
+                        />
                       </div>
-                    )}
+                      <div class="editor-field">
+                        <label>Translation</label>
+                        <textarea
+                          value={item.translation || ""}
+                          onInput={(e) =>
+                            handleTextChange(
+                              item.id,
+                              "translation",
+                              (e.target as HTMLTextAreaElement).value
+                            )
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                          rows={3}
+                        />
+                      </div>
+                    </div>
                   </li>
                 </>
               );
@@ -195,10 +176,7 @@ const ResultDisplay: FunctionalComponent<ResultDisplayProps> = ({
           </ul>
         ) : (
           <div class="empty-state-card">
-            <p>
-              No results yet. Upload an image and use the actions to get
-              started.
-            </p>
+            <p>No results yet. Use actions to get started.</p>
           </div>
         )}
       </div>

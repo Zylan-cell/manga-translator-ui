@@ -45,24 +45,26 @@ interface SettingsProps {
   fetchModels: () => void;
   systemPrompt: string;
   setSystemPrompt: (prompt: string) => void;
-
   usePanelDetection: boolean;
   setUsePanelDetection: (v: boolean) => void;
+  detectionModel: string;
+  setDetectionModel: (model: string) => void;
   streamTranslation: boolean;
   setStreamTranslation: (v: boolean) => void;
-
   enableTwoStepTranslation: boolean;
   setEnableTwoStepTranslation: (v: boolean) => void;
   deeplxUrl: string;
   setDeeplxUrl: (url: string) => void;
-
   ocrEngine: "manga";
   setOcrEngine: (v: "manga") => void;
   showCanvasText: boolean;
   setShowCanvasText: (v: boolean) => void;
-
   deeplTargetLang: string;
   setDeeplTargetLang: (v: string) => void;
+  inpaintModel?: string;
+  setInpaintModel?: (model: string) => void;
+  defaultBrushSize?: number;
+  setDefaultBrushSize?: (size: number) => void;
 }
 
 const Settings: FunctionalComponent<SettingsProps> = (p) => {
@@ -74,7 +76,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
 
   return (
     <div class="settings-modal-body">
-      {" "}
       <section class="settings-section">
         <h3>API Settings</h3>
         <div class="settings-field">
@@ -89,6 +90,24 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
           />
           <small class="hint">
             Used for detection, OCR and inpaint services.
+          </small>
+        </div>
+
+        <div class="settings-field">
+          <label for="detection-model">Detection Model</label>
+          <select
+            id="detection-model"
+            class="select"
+            value={p.detectionModel}
+            onChange={(e) =>
+              p.setDetectionModel((e.currentTarget as HTMLSelectElement).value)
+            }
+          >
+            <option value="bubbles_yolo">Bubbles YOLO (Default)</option>
+            <option value="comic_text_segmenter">Comic Text Segmenter</option>
+          </select>
+          <small class="hint">
+            Choose the model for detecting text bubbles.
           </small>
         </div>
 
@@ -109,7 +128,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
       </section>
       <section class="settings-section">
         <h3>OCR Settings</h3>
-
         <div class="settings-field">
           <label>OCR Engine</label>
           <div class="input-like-display">MangaOCR (Japanese)</div>
@@ -117,7 +135,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
             Using MangaOCR for Japanese text recognition.
           </small>
         </div>
-
         <div class="settings-field">
           <label class="toggle">
             <input
@@ -131,7 +148,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
       </section>
       <section class="settings-section">
         <h3>Translation Settings</h3>
-
         <div class="settings-field">
           <label for="translation-url">Translator URL (e.g., LM Studio)</label>
           <input
@@ -143,7 +159,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
             placeholder="http://localhost:1234"
           />
         </div>
-
         <div class="settings-field">
           <label>Model</label>
           <div class="model-select-group">
@@ -170,7 +185,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
             </button>
           </div>
         </div>
-
         <div class="settings-field">
           <label class="toggle">
             <input
@@ -198,7 +212,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
       </section>
       <section class="settings-section">
         <h3>2-Step Translation (JP → EN → DeepLx)</h3>
-
         <div class="settings-field">
           <label class="toggle">
             <input
@@ -212,7 +225,6 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
             Enable 2-Step Translation
           </label>
         </div>
-
         <div class="settings-field">
           <label htmlFor="deeplx-url">2nd Step Translator URL (DeepLX)</label>
           <input
@@ -247,6 +259,67 @@ const Settings: FunctionalComponent<SettingsProps> = (p) => {
           <small class="hint">
             Select the target language for translation.
           </small>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h3>Inpainting Settings</h3>
+        <div class="settings-field">
+          <label for="inpaint-model">Inpainting Model</label>
+          <select
+            id="inpaint-model"
+            class="input"
+            value={p.inpaintModel || "lama_large_512px"}
+            onChange={(e) =>
+              p.setInpaintModel?.((e.currentTarget as HTMLSelectElement).value)
+            }
+          >
+            <option value="lama_large_512px">LAMA Large 512px</option>
+            <option value="lama_small_256px">LAMA Small 256px</option>
+            <option value="lama_medium_512px">LAMA Medium 512px</option>
+          </select>
+          <small class="hint">
+            Select the model for inpainting operations. LAMA Large 512px
+            provides the best quality.
+          </small>
+        </div>
+        <div class="settings-field">
+          <label for="default-brush-size">Default Brush Size</label>
+          <div class="brush-size-control">
+            <input
+              id="default-brush-size"
+              type="range"
+              min="5"
+              max="100"
+              value={p.defaultBrushSize || 20}
+              onInput={(e) =>
+                p.setDefaultBrushSize?.(
+                  Number((e.target as HTMLInputElement).value)
+                )
+              }
+              class="slider"
+            />
+            <span class="brush-size-value">{p.defaultBrushSize || 20}px</span>
+          </div>
+          <small class="hint">Default brush size for mask drawing mode.</small>
+        </div>
+        <div class="settings-field">
+          <div class="inpainting-info">
+            <h4>Inpainting Usage:</h4>
+            <ul>
+              <li>
+                <strong>Auto Inpaint:</strong> Select a bubble and click
+                "Inpaint Selected Bubble" to automatically remove text
+              </li>
+              <li>
+                <strong>Manual Inpaint:</strong> Enter mask mode, draw over
+                areas to remove, then click "Inpaint Manual Mask"
+              </li>
+              <li>
+                <strong>Mask Mode:</strong> Use paint/erase tools to create
+                precise masks for inpainting
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
     </div>

@@ -22,6 +22,10 @@ export function useSettingsState() {
   const [usePanelDetection, setUsePanelDetection] = useState(
     () => localStorage.getItem("usePanelDetection") !== "false"
   );
+  // ИЗМЕНЕНО: Добавлено состояние для модели детекции
+  const [detectionModel, setDetectionModel] = useState(
+    () => localStorage.getItem("detectionModel") || "bubbles_yolo"
+  );
   const [streamTranslation, setStreamTranslation] = useState(
     () => localStorage.getItem("streamTranslation") === "true"
   );
@@ -40,13 +44,13 @@ export function useSettingsState() {
   const [showCanvasText, setShowCanvasText] = useState(
     () => localStorage.getItem("showCanvasText") !== "false"
   );
+  const [inpaintModel, setInpaintModel] = useState(
+    () => localStorage.getItem("inpaintModel") || "lama_large_512px"
+  );
+  const [defaultBrushSize, setDefaultBrushSize] = useState(() =>
+    parseInt(localStorage.getItem("defaultBrushSize") || "20", 10)
+  );
 
-  // Cleanup old localStorage values
-  useEffect(() => {
-    localStorage.removeItem("deeplOnly");
-  }, []);
-
-  // Persist
   useEffect(() => localStorage.setItem("apiBaseUrl", apiBaseUrl), [apiBaseUrl]);
   useEffect(
     () => localStorage.setItem("translationUrl", translationUrl),
@@ -59,6 +63,11 @@ export function useSettingsState() {
   useEffect(
     () => localStorage.setItem("usePanelDetection", String(usePanelDetection)),
     [usePanelDetection]
+  );
+  // ИЗМЕНЕНО: Сохраняем модель детекции
+  useEffect(
+    () => localStorage.setItem("detectionModel", detectionModel),
+    [detectionModel]
   );
   useEffect(
     () => localStorage.setItem("streamTranslation", String(streamTranslation)),
@@ -81,8 +90,14 @@ export function useSettingsState() {
     () => localStorage.setItem("showCanvasText", String(showCanvasText)),
     [showCanvasText]
   );
-
-  // Взаимоисключающие режимы убраны
+  useEffect(
+    () => localStorage.setItem("inpaintModel", inpaintModel),
+    [inpaintModel]
+  );
+  useEffect(
+    () => localStorage.setItem("defaultBrushSize", String(defaultBrushSize)),
+    [defaultBrushSize]
+  );
 
   return {
     apiBaseUrl,
@@ -93,6 +108,8 @@ export function useSettingsState() {
     setSystemPrompt,
     usePanelDetection,
     setUsePanelDetection,
+    detectionModel,
+    setDetectionModel, // ИЗМЕНЕНО: Экспортируем новое состояние
     streamTranslation,
     setStreamTranslation,
     enableTwoStepTranslation,
@@ -106,5 +123,9 @@ export function useSettingsState() {
     setOcrEngine,
     showCanvasText,
     setShowCanvasText,
+    inpaintModel,
+    setInpaintModel,
+    defaultBrushSize,
+    setDefaultBrushSize,
   };
 }

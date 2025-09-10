@@ -1,5 +1,5 @@
 // src/hooks/useImageLibrary.ts
-import { useCallback, useState } from "preact/hooks";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import { invoke } from "@tauri-apps/api/core";
 import { ImageInfo } from "../types";
 import { ProgressState } from "../types/ui";
@@ -40,29 +40,12 @@ export function useImageLibrary(
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
 
-  const handleImportImages = useCallback(async () => {
-    const picked = await invoke<ImageInfo[]>("import_images");
-    if (!picked?.length) return;
-
-    setImageList((prev) => {
-      const map = new Map<string, ImageInfo>();
-      for (const it of prev) map.set(it.path, it);
-      for (const it of picked) map.set(it.path, it);
-      const next = Array.from(map.values()).sort((a, b) =>
-        a.name.localeCompare(b.name)
-      );
-      if (prev.length === 0 && next.length > 0) {
-        setTimeout(() => loadImageByIndex(0), 0);
-      }
-      return next;
-    });
-  }, []);
-
   const loadImageByIndex = useCallback(
     async (index: number) => {
       const item = imageList[index];
       if (!item) return;
 
+      // Если уже есть dataUrl — просто активируем
       if (item.dataUrl) {
         setCurrentImageIndex(index);
         setImageSrc(item.dataUrl);
@@ -82,12 +65,19 @@ export function useImageLibrary(
         const mime = extToMime(item.path);
         const dataUrl = `data:${mime};base64,${b64}`;
 
+        // Обновляем список: кладём dataUrl внутрь соответствующего элемента
         setImageList((prev) => {
           const next = [...prev];
-          next[index] = { ...next[index], dataUrl };
+          // index может немного "уплыть", поэтому сверим по path
+          const idx =
+            next.findIndex((x) => x.path === item.path) !== -1
+              ? next.findIndex((x) => x.path === item.path)
+              : index;
+          if (next[idx]) next[idx] = { ...next[idx], dataUrl };
           return next;
         });
 
+        // Активируем
         setCurrentImageIndex(index);
         setImageSrc(dataUrl);
       } finally {
@@ -106,6 +96,60 @@ export function useImageLibrary(
     [loadImageByIndex]
   );
 
+  const handleImportImages = useCallback(async () => {
+    const picked = await invoke<ImageInfo[]>("import_images");
+    if (!picked?.length) return;
+
+    // Мерджим с текущим списком
+    setImageList((prev) => {
+      const map = new Map<string, ImageInfo>();
+      for (const it of prev) map.set(it.path, it);
+      for (const it of picked) map.set(it.path, it);
+      const next = Array.from(map.values()).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      return next;
+    });
+
+    // Всегда выбираем первое после импорта
+    setCurrentImageIndex(0);
+  }, []);
+
+  const handleImportFolder = useCallback(async () => {
+    const picked = await invoke<ImageInfo[]>("import_folder");
+    if (!picked?.length) return;
+
+    setImageList((prev) => {
+      const map = new Map<string, ImageInfo>();
+      for (const it of prev) map.set(it.path, it);
+      for (const it of picked) map.set(it.path, it);
+      const next = Array.from(map.values()).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      return next;
+    });
+
+    // Всегда выбираем первое после импорта
+    setCurrentImageIndex(0);
+  }, []);
+
+  // АВТО-ЗАГРУЗКА по изменению списка:
+  // как только список изменился и есть валидный индекс — загрузим это изображение.
+  useEffect(() => {
+    if (!imageList.length) return;
+    const idx = Math.min(currentImageIndex, imageList.length - 1);
+    if (idx < 0) return;
+    // Если уже отображаем этот же dataUrl — ок; иначе подгрузим
+    const item = imageList[idx];
+    if (!item) return;
+    if (item.dataUrl) {
+      setImageSrc(item.dataUrl);
+    } else {
+      // лениво загружаем файл
+      loadImageByIndex(idx);
+    }
+  }, [imageList]); // намеренно без зависимостей loadImageByIndex/currentImageIndex тут
+
   return {
     imageList,
     setImageList,
@@ -114,6 +158,7 @@ export function useImageLibrary(
     imageSrc,
     setImageSrc,
     handleImportImages,
+    handleImportFolder,
     loadImageByIndex,
     selectImageAt,
   };

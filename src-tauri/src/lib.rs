@@ -207,6 +207,32 @@ async fn inpaint_text_auto(api_url: String, image_data: String, boxes: Option<Ve
 }
 
 #[tauri::command]
+async fn inpaint_lama(api_url: String, image_data: String, mask_data: String, model: Option<String>) -> Result<Value, String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/inpaint_lama", api_url.trim_end_matches('/'));
+    let payload = serde_json::json!({
+        "image_data": image_data,
+        "mask_data": mask_data,
+        "model": model.unwrap_or_else(|| "lama_large_512px".to_string())
+    });
+    let response = client.post(&url).json(&payload).send().await.map_err(|e| e.to_string())?;
+    handle_response(response).await
+}
+
+#[tauri::command]
+async fn inpaint_manual_mask(api_url: String, image_data: String, mask_data: String, model: Option<String>) -> Result<Value, String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/inpaint_manual", api_url.trim_end_matches('/'));
+    let payload = serde_json::json!({
+        "image_data": image_data,
+        "mask_data": mask_data,
+        "model": model.unwrap_or_else(|| "lama_large_512px".to_string())
+    });
+    let response = client.post(&url).json(&payload).send().await.map_err(|e| e.to_string())?;
+    handle_response(response).await
+}
+
+#[tauri::command]
 async fn fetch_image(url: String) -> Result<String, String> {
     let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
@@ -237,6 +263,8 @@ pub fn run() {
             translate_deeplx,
             inpaint_image,
             inpaint_text_auto,
+            inpaint_lama,
+            inpaint_manual_mask,
             fetch_image,
             read_file_b64
         ])

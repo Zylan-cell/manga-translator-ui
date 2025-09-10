@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo } from "preact/hooks";
-import { DetectedTextItem, BoundingBox } from "../types";
+import {
+  DetectedTextItem,
+  BoundingBox,
+  TextProperties,
+  DEFAULT_TEXT_PROPERTIES,
+} from "../types";
 
 export interface LaidOutTextItem extends DetectedTextItem {
   layout?: {
@@ -9,76 +14,39 @@ export interface LaidOutTextItem extends DetectedTextItem {
   };
 }
 
-function breakByChars(
-  ctx: CanvasRenderingContext2D,
-  s: string,
-  maxWidth: number
-) {
-  const out: string[] = [];
-  let cur = "";
-  for (const ch of s) {
-    const test = cur + ch;
-    if (ctx.measureText(test).width > maxWidth && cur) {
-      out.push(cur);
-      cur = ch;
-    } else {
-      cur = test;
-    }
-  }
-  if (cur) out.push(cur);
-  return out;
-}
-
 function calcLayout(
   ctx: CanvasRenderingContext2D,
   text: string,
-  box: BoundingBox
+  box: BoundingBox,
+  textProps: TextProperties
 ) {
   const padding = 4;
   const maxW = Math.max(8, box.x2 - box.x1 - padding * 2);
-  const maxH = Math.max(8, box.y2 - box.y1 - padding * 2);
 
-  if (!text) return { lines: [""], fontSize: 10, lineHeight: 12 };
+  // ИЗМЕНЕНИЕ: Размер шрифта теперь фиксирован и берется из настроек
+  const fontSize = textProps.fontSize;
+  ctx.font = `${textProps.fontStyle} ${textProps.fontWeight} ${fontSize}px "${textProps.fontFamily}", sans-serif`;
+  const lineHeight = Math.ceil(fontSize * 1.2);
 
-  let fontSize = Math.min(64, maxH);
-  let chosen = { lines: [text], fontSize: 10, lineHeight: 12 };
+  if (!text) return { lines: [""], fontSize, lineHeight };
 
-  // цикл уменьшения шрифта
-  while (fontSize >= 6) {
-    ctx.font = `bold ${fontSize}px "Arial Black", sans-serif`;
-    const lh = Math.ceil(fontSize * 1.2);
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = words[0] || "";
 
-    // сперва пробуем разбивку по словам
-    const words = text.split(/\s+/);
-    const lines: string[] = [];
-    let cur = words[0] || "";
-    for (let i = 1; i < words.length; i++) {
-      const test = cur + " " + words[i];
-      if (ctx.measureText(test).width > maxW && cur) {
-        lines.push(cur);
-        cur = words[i];
-      } else {
-        cur = test;
-      }
+  for (let i = 1; i < words.length; i++) {
+    const testLine = currentLine + " " + words[i];
+    if (ctx.measureText(testLine).width > maxW && currentLine) {
+      lines.push(currentLine);
+      currentLine = words[i];
+    } else {
+      currentLine = testLine;
     }
-    if (cur) lines.push(cur);
-
-    // если хоть одна строка всё ещё длиннее maxW — делим её посимвольно
-    for (let i = 0; i < lines.length; i++) {
-      if (ctx.measureText(lines[i]).width > maxW) {
-        const broken = breakByChars(ctx, lines[i], maxW);
-        lines.splice(i, 1, ...broken);
-        i += broken.length - 1;
-      }
-    }
-
-    if (lines.length * lh <= maxH) {
-      chosen = { lines, fontSize, lineHeight: lh };
-      break;
-    }
-    fontSize -= 1;
   }
-  return chosen;
+  if (currentLine) lines.push(currentLine);
+
+  // Возвращаем результат с фиксированным размером шрифта
+  return { lines, fontSize, lineHeight };
 }
 
 export function useTextLayout(
@@ -100,8 +68,14 @@ export function useTextLayout(
       return;
     }
     const next = items.map((it) => {
-      if (!it.translation) return it;
-      const layout = calcLayout(ctx, it.translation, it.box);
+      if (!it.translation) {
+        const { layout, ...rest } = it as LaidOutTextItem;
+        return rest;
+      }
+
+      const textProps = it.textProperties || DEFAULT_TEXT_PROPERTIES;
+
+      const layout = calcLayout(ctx, it.translation, it.box, textProps);
       return { ...it, layout };
     });
     setLaidOutItems(next);
