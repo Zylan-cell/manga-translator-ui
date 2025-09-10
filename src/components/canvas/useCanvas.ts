@@ -309,8 +309,6 @@ export function useCanvas({
     };
 
     const onPointerMoveAny = (sx: number, sy: number) => {
-      const dx = sx - stateRef.current.lastPos.x;
-      const dy = sy - stateRef.current.lastPos.y;
       stateRef.current.lastPos = { x: sx, y: sy };
       const ip = screenToImage(sx, sy);
 

@@ -158,7 +158,6 @@ export default function App() {
     setImageSrc,
     handleImportImages,
     handleImportFolder,
-    loadImageByIndex,
     selectImageAt,
   } = useImageLibrary(setProgress, false);
 
