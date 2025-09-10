@@ -1,6 +1,6 @@
 # Manga Translator - Frontend Application
 
-This is the user interface for the Manga Translator application, built with [Tauri](https://tauri.app/), [Preact](https://preactjs.com/), and TypeScript. It provides a desktop and mobile-friendly interface for translating manga pages.
+This is the user interface for the Manga Translator application, built with Tauri, Preact, and TypeScript. It provides a desktop interface for translating manga pages.
 
 ---
 
